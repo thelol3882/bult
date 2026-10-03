@@ -1,0 +1,37 @@
+# --- OS / editors ---
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# --- Secrets & local config ---
+# Any .env variant (.env, .env.local, .env.prod...) stays local;
+# the template documenting required variables is committed.
+.env
+.env.*
+!.env.example
+# TLS material (future mTLS between control plane and agents).
+*.pem
+*.key
+*.crt
+*.p12
+# Personal compose tweaks (ports, volumes) - docker compose merges it automatically.
+compose.override.yaml
+docker-compose.override.yml
+
+# --- Logs ---
+*.log
+logs/
+
+# --- Multipass / VMs ---
+# Rendered cloud-init with real SSH keys; the template without secrets is committed.
+deploy/multipass/*.local.yaml
+# VM disk images, if ever created inside the repo by mistake.
+*.img
+*.qcow2
+
+# --- Benchmarks ---
+bench/results/
