@@ -1,0 +1,11 @@
+# buf workspace: one module with the agent contract.
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - STANDARD
+breaking:
+  # FILE: strictest level — also flags moving types between files.
+  use:
+    - FILE

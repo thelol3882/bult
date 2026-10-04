@@ -1,0 +1,21 @@
+# Code generation for the agent contract. Run via `make proto`.
+version: v2
+clean: true   # wipe the out dirs first so deleted messages don't leave stale files
+plugins:
+  # Go: messages + gRPC server/client -> agent/gen/bult/agent/v1/
+  - local: protoc-gen-go
+    out: agent/gen
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: agent/gen
+    opt: paths=source_relative
+
+  # Python: messages + type stubs (built into protoc) + gRPC stubs.
+  # Output -> control-plane/gen/bult/agent/v1/, imported as `bult.agent.v1`.
+  - protoc_builtin: python
+    out: control-plane/gen
+  - protoc_builtin: pyi
+    out: control-plane/gen
+  # protoc has no built-in gRPC Python generator; use the hosted plugin.
+  - remote: buf.build/grpc/python
+    out: control-plane/gen

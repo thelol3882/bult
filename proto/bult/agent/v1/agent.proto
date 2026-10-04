@@ -1,0 +1,136 @@
+syntax = "proto3";
+
+package bult.agent.v1;
+
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1";
+
+// RuntimeService runs application replicas on a runner node.
+// All replica IDs are issued by the control plane; the agent treats them as opaque.
+service RuntimeService {
+  // RunReplica pulls the image (if not cached) and starts a new replica.
+  // Idempotent: a repeated call with the same replica_id and spec returns OK
+  // without starting a second container; a different spec returns ALREADY_EXISTS.
+  rpc RunReplica(RunReplicaRequest) returns (RunReplicaResponse);
+
+  // StopReplica stops a running replica but keeps its container and logs.
+  rpc StopReplica(StopReplicaRequest) returns (StopReplicaResponse);
+
+  // StartReplica starts a previously stopped replica.
+  // The host port may differ from before; callers must use the returned one.
+  rpc StartReplica(StartReplicaRequest) returns (StartReplicaResponse);
+
+  // RemoveReplica deletes a replica together with its logs.
+  // Idempotent: removing a replica that no longer exists returns OK.
+  rpc RemoveReplica(RemoveReplicaRequest) returns (RemoveReplicaResponse);
+
+  // ListReplicas returns every replica managed by bult on this node,
+  // including ones the control plane may not know about (for reconciliation).
+  rpc ListReplicas(ListReplicasRequest) returns (ListReplicasResponse);
+
+  // Logs streams a replica's output. Without follow, the stream ends after
+  // the requested tail; with follow, it stays open until the client cancels.
+  rpc Logs(LogsRequest) returns (stream LogsResponse);
+}
+
+// ReplicaState is the observed state of a replica's container.
+enum ReplicaState {
+  REPLICA_STATE_UNSPECIFIED = 0;
+  REPLICA_STATE_RUNNING = 1;
+  // The container has stopped (crashed or stopped on request); logs are kept.
+  REPLICA_STATE_EXITED = 2;
+}
+
+message RunReplicaRequest {
+  string replica_id = 1;
+  ImageRef image = 2;
+  // Port the application listens on inside the container (e.g. 8000).
+  // Must be 1-65535. The agent maps it to a host port it allocates itself.
+  uint32 container_port = 3;
+  Limits limits = 4;
+  // Environment variables, in order.
+  repeated EnvVar env = 5;
+}
+
+message RunReplicaResponse {
+  Replica replica = 1;
+}
+
+message EnvVar {
+  string name = 1;
+  string value = 2;
+}
+
+// Limits caps the resources of a replica. Both fields are required:
+// 0 is rejected with INVALID_ARGUMENT.
+message Limits {
+  // CPU in thousandths of a core: 500 = half a core.
+  int64 cpu_millicores = 1;
+  // Memory limit in bytes.
+  int64 memory_bytes = 2;
+}
+
+// ImageRef points to an exact image in the registry.
+message ImageRef {
+  // Repository including the registry host, e.g. "192.168.252.1:5000/myapp-42".
+  string repository = 1;
+  // Content digest, e.g. "sha256:9f86...". Required: replicas run by digest only.
+  string digest = 2;
+}
+
+// Replica is what the agent observes on the node, not what was requested.
+message Replica {
+  string replica_id = 1;
+  ReplicaState state = 2;
+  // Host port allocated by the agent; this is the upstream address for nginx.
+  uint32 host_port = 3;
+  // Image actually running; lets reconciliation tell old replicas from new.
+  ImageRef image = 4;
+  google.protobuf.Timestamp started_at = 5;
+  // Process exit code. Set only when state is REPLICA_STATE_EXITED.
+  optional int32 exit_code = 6;
+}
+
+message StopReplicaRequest {
+  string replica_id = 1;
+}
+
+message StopReplicaResponse {
+  Replica replica = 1;
+}
+
+message StartReplicaRequest {
+  string replica_id = 1;
+}
+
+message StartReplicaResponse {
+  Replica replica = 1;
+}
+
+message RemoveReplicaRequest {
+  string replica_id = 1;
+}
+
+message RemoveReplicaResponse {}
+
+message ListReplicasRequest {}
+
+message ListReplicasResponse {
+  repeated Replica replicas = 1;
+}
+
+message LogsRequest {
+  string replica_id = 1;
+  // Keep streaming new output until the client cancels. Has no deadline.
+  bool follow = 2;
+  // Number of most recent lines to send first. 0 means no history:
+  // only output produced after the call (useful with follow).
+  int32 tail_lines = 3;
+}
+
+message LogsResponse {
+  // Raw output bytes. Not guaranteed to be valid UTF-8 (or to end on a line
+  // or character boundary); decode on the consumer side.
+  bytes data = 1;
+}
