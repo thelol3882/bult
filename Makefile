@@ -39,13 +39,20 @@ agent-test: ## Run agent tests
 	cd agent && go test ./...
 
 # multipass transfer drops the exec bit, so install with explicit mode.
-agent-deploy: agent-build ## Build and install bultd to /usr/local/bin on all NODES
-	@for n in $(NODES); do \
+# Nodes that are not Running are skipped with a warning; fails only if none got the binary.
+agent-deploy: agent-build ## Build and install bultd to /usr/local/bin on running NODES
+	@deployed=0; \
+	for n in $(NODES); do \
+		if ! multipass list --format csv | grep -q "^$$n,Running,"; then \
+			echo "-- $$n: not running, skipped"; continue; \
+		fi; \
 		echo "-> $$n"; \
 		multipass transfer $(AGENT_BIN) $$n:/tmp/bultd && \
 		multipass exec $$n -- sudo install -m 755 /tmp/bultd /usr/local/bin/bultd && \
 		multipass exec $$n -- rm -f /tmp/bultd || exit 1; \
-	done
+		deployed=$$((deployed + 1)); \
+	done; \
+	if [ $$deployed -eq 0 ]; then echo "no running nodes — start one with: multipass start <name>"; exit 1; fi
 
 agent-clean: ## Remove agent build output
 	rm -rf agent/bin
