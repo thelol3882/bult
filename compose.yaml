@@ -1,0 +1,14 @@
+# TODO: nginx ingress; include control-plane/compose.yaml.
+services:
+  registry:
+    image: registry:3
+    restart: unless-stopped
+    ports:
+      - "5050:5000"
+    environment:
+      REGISTRY_STORAGE_DELETE_ENABLED: "true"
+    volumes:
+      - registry-data:/var/lib/registry
+
+volumes:
+  registry-data:
