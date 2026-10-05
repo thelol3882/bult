@@ -1,0 +1,18 @@
+# Go build output.
+/bin/
+/dist/
+# `go build ./cmd/bultd` drops the binary into the current dir; `go build` in
+# the module root would name it after the module (agent).
+/bultd
+/agent
+*.exe
+
+# Test binaries (`go test -c`) and profiles/coverage.
+*.test
+*.out
+coverage.*
+*.prof
+
+# Workspace files are a local multi-module convenience, not part of the build.
+go.work
+go.work.sum

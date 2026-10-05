@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
+	"github.com/thelol3882/bult/agent/internal/docker"
 	"github.com/thelol3882/bult/agent/internal/server"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -48,8 +49,14 @@ func run(addr string) error {
 	}
 	defer lis.Close()
 
+	dc, err := docker.New()
+	if err != nil {
+		return err
+	}
+	defer dc.Close()
+
 	grpcServer := grpc.NewServer()
-	impl := server.NewRuntime()
+	impl := server.NewRuntime(dc)
 	agentv1.RegisterRuntimeServiceServer(grpcServer, impl)
 
 	reflection.Register(grpcServer)
