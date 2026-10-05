@@ -20,18 +20,20 @@ REPLICA_STATE_RUNNING: ReplicaState
 REPLICA_STATE_EXITED: ReplicaState
 
 class RunReplicaRequest(_message.Message):
-    __slots__ = ("replica_id", "image", "container_port", "limits", "env")
+    __slots__ = ("replica_id", "app_id", "image", "container_port", "limits", "env")
     REPLICA_ID_FIELD_NUMBER: _ClassVar[int]
+    APP_ID_FIELD_NUMBER: _ClassVar[int]
     IMAGE_FIELD_NUMBER: _ClassVar[int]
     CONTAINER_PORT_FIELD_NUMBER: _ClassVar[int]
     LIMITS_FIELD_NUMBER: _ClassVar[int]
     ENV_FIELD_NUMBER: _ClassVar[int]
     replica_id: str
+    app_id: str
     image: ImageRef
     container_port: int
     limits: Limits
     env: _containers.RepeatedCompositeFieldContainer[EnvVar]
-    def __init__(self, replica_id: _Optional[str] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., container_port: _Optional[int] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ..., env: _Optional[_Iterable[_Union[EnvVar, _Mapping]]] = ...) -> None: ...
+    def __init__(self, replica_id: _Optional[str] = ..., app_id: _Optional[str] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., container_port: _Optional[int] = ..., limits: _Optional[_Union[Limits, _Mapping]] = ..., env: _Optional[_Iterable[_Union[EnvVar, _Mapping]]] = ...) -> None: ...
 
 class RunReplicaResponse(_message.Message):
     __slots__ = ("replica",)
@@ -64,20 +66,22 @@ class ImageRef(_message.Message):
     def __init__(self, repository: _Optional[str] = ..., digest: _Optional[str] = ...) -> None: ...
 
 class Replica(_message.Message):
-    __slots__ = ("replica_id", "state", "host_port", "image", "started_at", "exit_code")
+    __slots__ = ("replica_id", "app_id", "state", "host_port", "image", "started_at", "exit_code")
     REPLICA_ID_FIELD_NUMBER: _ClassVar[int]
+    APP_ID_FIELD_NUMBER: _ClassVar[int]
     STATE_FIELD_NUMBER: _ClassVar[int]
     HOST_PORT_FIELD_NUMBER: _ClassVar[int]
     IMAGE_FIELD_NUMBER: _ClassVar[int]
     STARTED_AT_FIELD_NUMBER: _ClassVar[int]
     EXIT_CODE_FIELD_NUMBER: _ClassVar[int]
     replica_id: str
+    app_id: str
     state: ReplicaState
     host_port: int
     image: ImageRef
     started_at: _timestamp_pb2.Timestamp
     exit_code: int
-    def __init__(self, replica_id: _Optional[str] = ..., state: _Optional[_Union[ReplicaState, str]] = ..., host_port: _Optional[int] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., exit_code: _Optional[int] = ...) -> None: ...
+    def __init__(self, replica_id: _Optional[str] = ..., app_id: _Optional[str] = ..., state: _Optional[_Union[ReplicaState, str]] = ..., host_port: _Optional[int] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., exit_code: _Optional[int] = ...) -> None: ...
 
 class StopReplicaRequest(_message.Message):
     __slots__ = ("replica_id",)

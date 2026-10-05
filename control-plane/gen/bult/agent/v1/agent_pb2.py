@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import timestamp_pb2 as google_dot_protobuf_dot_timestamp__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x62ult/agent/v1/agent.proto\x12\rbult.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe0\x01\n\x11RunReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12-\n\x05image\x18\x02 \x01(\x0b\x32\x17.bult.agent.v1.ImageRefR\x05image\x12%\n\x0e\x63ontainer_port\x18\x03 \x01(\rR\rcontainerPort\x12-\n\x06limits\x18\x04 \x01(\x0b\x32\x15.bult.agent.v1.LimitsR\x06limits\x12\'\n\x03\x65nv\x18\x05 \x03(\x0b\x32\x15.bult.agent.v1.EnvVarR\x03\x65nv\"F\n\x12RunReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"2\n\x06\x45nvVar\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value\"R\n\x06Limits\x12%\n\x0e\x63pu_millicores\x18\x01 \x01(\x03R\rcpuMillicores\x12!\n\x0cmemory_bytes\x18\x02 \x01(\x03R\x0bmemoryBytes\"B\n\x08ImageRef\x12\x1e\n\nrepository\x18\x01 \x01(\tR\nrepository\x12\x16\n\x06\x64igest\x18\x02 \x01(\tR\x06\x64igest\"\x92\x02\n\x07Replica\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12\x31\n\x05state\x18\x02 \x01(\x0e\x32\x1b.bult.agent.v1.ReplicaStateR\x05state\x12\x1b\n\thost_port\x18\x03 \x01(\rR\x08hostPort\x12-\n\x05image\x18\x04 \x01(\x0b\x32\x17.bult.agent.v1.ImageRefR\x05image\x12\x39\n\nstarted_at\x18\x05 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\tstartedAt\x12 \n\texit_code\x18\x06 \x01(\x05H\x00R\x08\x65xitCode\x88\x01\x01\x42\x0c\n\n_exit_code\"3\n\x12StopReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"G\n\x13StopReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"4\n\x13StartReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"H\n\x14StartReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"5\n\x14RemoveReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"\x17\n\x15RemoveReplicaResponse\"\x15\n\x13ListReplicasRequest\"J\n\x14ListReplicasResponse\x12\x32\n\x08replicas\x18\x01 \x03(\x0b\x32\x16.bult.agent.v1.ReplicaR\x08replicas\"c\n\x0bLogsRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12\x16\n\x06\x66ollow\x18\x02 \x01(\x08R\x06\x66ollow\x12\x1d\n\ntail_lines\x18\x03 \x01(\x05R\ttailLines\"\"\n\x0cLogsResponse\x12\x12\n\x04\x64\x61ta\x18\x01 \x01(\x0cR\x04\x64\x61ta*b\n\x0cReplicaState\x12\x1d\n\x19REPLICA_STATE_UNSPECIFIED\x10\x00\x12\x19\n\x15REPLICA_STATE_RUNNING\x10\x01\x12\x18\n\x14REPLICA_STATE_EXITED\x10\x02\x32\x8a\x04\n\x0eRuntimeService\x12Q\n\nRunReplica\x12 .bult.agent.v1.RunReplicaRequest\x1a!.bult.agent.v1.RunReplicaResponse\x12T\n\x0bStopReplica\x12!.bult.agent.v1.StopReplicaRequest\x1a\".bult.agent.v1.StopReplicaResponse\x12W\n\x0cStartReplica\x12\".bult.agent.v1.StartReplicaRequest\x1a#.bult.agent.v1.StartReplicaResponse\x12Z\n\rRemoveReplica\x12#.bult.agent.v1.RemoveReplicaRequest\x1a$.bult.agent.v1.RemoveReplicaResponse\x12W\n\x0cListReplicas\x12\".bult.agent.v1.ListReplicasRequest\x1a#.bult.agent.v1.ListReplicasResponse\x12\x41\n\x04Logs\x12\x1a.bult.agent.v1.LogsRequest\x1a\x1b.bult.agent.v1.LogsResponse0\x01\x42<Z:github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1b\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x19\x62ult/agent/v1/agent.proto\x12\rbult.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf7\x01\n\x11RunReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12\x15\n\x06\x61pp_id\x18\x02 \x01(\tR\x05\x61ppId\x12-\n\x05image\x18\x03 \x01(\x0b\x32\x17.bult.agent.v1.ImageRefR\x05image\x12%\n\x0e\x63ontainer_port\x18\x04 \x01(\rR\rcontainerPort\x12-\n\x06limits\x18\x05 \x01(\x0b\x32\x15.bult.agent.v1.LimitsR\x06limits\x12\'\n\x03\x65nv\x18\x06 \x03(\x0b\x32\x15.bult.agent.v1.EnvVarR\x03\x65nv\"F\n\x12RunReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"2\n\x06\x45nvVar\x12\x12\n\x04name\x18\x01 \x01(\tR\x04name\x12\x14\n\x05value\x18\x02 \x01(\tR\x05value\"R\n\x06Limits\x12%\n\x0e\x63pu_millicores\x18\x01 \x01(\x03R\rcpuMillicores\x12!\n\x0cmemory_bytes\x18\x02 \x01(\x03R\x0bmemoryBytes\"B\n\x08ImageRef\x12\x1e\n\nrepository\x18\x01 \x01(\tR\nrepository\x12\x16\n\x06\x64igest\x18\x02 \x01(\tR\x06\x64igest\"\xa9\x02\n\x07Replica\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12\x15\n\x06\x61pp_id\x18\x02 \x01(\tR\x05\x61ppId\x12\x31\n\x05state\x18\x03 \x01(\x0e\x32\x1b.bult.agent.v1.ReplicaStateR\x05state\x12\x1b\n\thost_port\x18\x04 \x01(\rR\x08hostPort\x12-\n\x05image\x18\x05 \x01(\x0b\x32\x17.bult.agent.v1.ImageRefR\x05image\x12\x39\n\nstarted_at\x18\x06 \x01(\x0b\x32\x1a.google.protobuf.TimestampR\tstartedAt\x12 \n\texit_code\x18\x07 \x01(\x05H\x00R\x08\x65xitCode\x88\x01\x01\x42\x0c\n\n_exit_code\"3\n\x12StopReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"G\n\x13StopReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"4\n\x13StartReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"H\n\x14StartReplicaResponse\x12\x30\n\x07replica\x18\x01 \x01(\x0b\x32\x16.bult.agent.v1.ReplicaR\x07replica\"5\n\x14RemoveReplicaRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\"\x17\n\x15RemoveReplicaResponse\"\x15\n\x13ListReplicasRequest\"J\n\x14ListReplicasResponse\x12\x32\n\x08replicas\x18\x01 \x03(\x0b\x32\x16.bult.agent.v1.ReplicaR\x08replicas\"c\n\x0bLogsRequest\x12\x1d\n\nreplica_id\x18\x01 \x01(\tR\treplicaId\x12\x16\n\x06\x66ollow\x18\x02 \x01(\x08R\x06\x66ollow\x12\x1d\n\ntail_lines\x18\x03 \x01(\x05R\ttailLines\"\"\n\x0cLogsResponse\x12\x12\n\x04\x64\x61ta\x18\x01 \x01(\x0cR\x04\x64\x61ta*b\n\x0cReplicaState\x12\x1d\n\x19REPLICA_STATE_UNSPECIFIED\x10\x00\x12\x19\n\x15REPLICA_STATE_RUNNING\x10\x01\x12\x18\n\x14REPLICA_STATE_EXITED\x10\x02\x32\x8a\x04\n\x0eRuntimeService\x12Q\n\nRunReplica\x12 .bult.agent.v1.RunReplicaRequest\x1a!.bult.agent.v1.RunReplicaResponse\x12T\n\x0bStopReplica\x12!.bult.agent.v1.StopReplicaRequest\x1a\".bult.agent.v1.StopReplicaResponse\x12W\n\x0cStartReplica\x12\".bult.agent.v1.StartReplicaRequest\x1a#.bult.agent.v1.StartReplicaResponse\x12Z\n\rRemoveReplica\x12#.bult.agent.v1.RemoveReplicaRequest\x1a$.bult.agent.v1.RemoveReplicaResponse\x12W\n\x0cListReplicas\x12\".bult.agent.v1.ListReplicasRequest\x1a#.bult.agent.v1.ListReplicasResponse\x12\x41\n\x04Logs\x12\x1a.bult.agent.v1.LogsRequest\x1a\x1b.bult.agent.v1.LogsResponse0\x01\x42<Z:github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1b\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,40 +33,40 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'bult.agent.v1.agent_pb2', _
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z:github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1'
-  _globals['_REPLICASTATE']._serialized_start=1427
-  _globals['_REPLICASTATE']._serialized_end=1525
+  _globals['_REPLICASTATE']._serialized_start=1473
+  _globals['_REPLICASTATE']._serialized_end=1571
   _globals['_RUNREPLICAREQUEST']._serialized_start=78
-  _globals['_RUNREPLICAREQUEST']._serialized_end=302
-  _globals['_RUNREPLICARESPONSE']._serialized_start=304
-  _globals['_RUNREPLICARESPONSE']._serialized_end=374
-  _globals['_ENVVAR']._serialized_start=376
-  _globals['_ENVVAR']._serialized_end=426
-  _globals['_LIMITS']._serialized_start=428
-  _globals['_LIMITS']._serialized_end=510
-  _globals['_IMAGEREF']._serialized_start=512
-  _globals['_IMAGEREF']._serialized_end=578
-  _globals['_REPLICA']._serialized_start=581
-  _globals['_REPLICA']._serialized_end=855
-  _globals['_STOPREPLICAREQUEST']._serialized_start=857
-  _globals['_STOPREPLICAREQUEST']._serialized_end=908
-  _globals['_STOPREPLICARESPONSE']._serialized_start=910
-  _globals['_STOPREPLICARESPONSE']._serialized_end=981
-  _globals['_STARTREPLICAREQUEST']._serialized_start=983
-  _globals['_STARTREPLICAREQUEST']._serialized_end=1035
-  _globals['_STARTREPLICARESPONSE']._serialized_start=1037
-  _globals['_STARTREPLICARESPONSE']._serialized_end=1109
-  _globals['_REMOVEREPLICAREQUEST']._serialized_start=1111
-  _globals['_REMOVEREPLICAREQUEST']._serialized_end=1164
-  _globals['_REMOVEREPLICARESPONSE']._serialized_start=1166
-  _globals['_REMOVEREPLICARESPONSE']._serialized_end=1189
-  _globals['_LISTREPLICASREQUEST']._serialized_start=1191
-  _globals['_LISTREPLICASREQUEST']._serialized_end=1212
-  _globals['_LISTREPLICASRESPONSE']._serialized_start=1214
-  _globals['_LISTREPLICASRESPONSE']._serialized_end=1288
-  _globals['_LOGSREQUEST']._serialized_start=1290
-  _globals['_LOGSREQUEST']._serialized_end=1389
-  _globals['_LOGSRESPONSE']._serialized_start=1391
-  _globals['_LOGSRESPONSE']._serialized_end=1425
-  _globals['_RUNTIMESERVICE']._serialized_start=1528
-  _globals['_RUNTIMESERVICE']._serialized_end=2050
+  _globals['_RUNREPLICAREQUEST']._serialized_end=325
+  _globals['_RUNREPLICARESPONSE']._serialized_start=327
+  _globals['_RUNREPLICARESPONSE']._serialized_end=397
+  _globals['_ENVVAR']._serialized_start=399
+  _globals['_ENVVAR']._serialized_end=449
+  _globals['_LIMITS']._serialized_start=451
+  _globals['_LIMITS']._serialized_end=533
+  _globals['_IMAGEREF']._serialized_start=535
+  _globals['_IMAGEREF']._serialized_end=601
+  _globals['_REPLICA']._serialized_start=604
+  _globals['_REPLICA']._serialized_end=901
+  _globals['_STOPREPLICAREQUEST']._serialized_start=903
+  _globals['_STOPREPLICAREQUEST']._serialized_end=954
+  _globals['_STOPREPLICARESPONSE']._serialized_start=956
+  _globals['_STOPREPLICARESPONSE']._serialized_end=1027
+  _globals['_STARTREPLICAREQUEST']._serialized_start=1029
+  _globals['_STARTREPLICAREQUEST']._serialized_end=1081
+  _globals['_STARTREPLICARESPONSE']._serialized_start=1083
+  _globals['_STARTREPLICARESPONSE']._serialized_end=1155
+  _globals['_REMOVEREPLICAREQUEST']._serialized_start=1157
+  _globals['_REMOVEREPLICAREQUEST']._serialized_end=1210
+  _globals['_REMOVEREPLICARESPONSE']._serialized_start=1212
+  _globals['_REMOVEREPLICARESPONSE']._serialized_end=1235
+  _globals['_LISTREPLICASREQUEST']._serialized_start=1237
+  _globals['_LISTREPLICASREQUEST']._serialized_end=1258
+  _globals['_LISTREPLICASRESPONSE']._serialized_start=1260
+  _globals['_LISTREPLICASRESPONSE']._serialized_end=1334
+  _globals['_LOGSREQUEST']._serialized_start=1336
+  _globals['_LOGSREQUEST']._serialized_end=1435
+  _globals['_LOGSRESPONSE']._serialized_start=1437
+  _globals['_LOGSRESPONSE']._serialized_end=1471
+  _globals['_RUNTIMESERVICE']._serialized_start=1574
+  _globals['_RUNTIMESERVICE']._serialized_end=2096
 # @@protoc_insertion_point(module_scope)

@@ -44,13 +44,15 @@ enum ReplicaState {
 
 message RunReplicaRequest {
   string replica_id = 1;
-  ImageRef image = 2;
+  // Application id not name, because name can be changed.
+  string app_id = 2;
+  ImageRef image = 3;
   // Port the application listens on inside the container (e.g. 8000).
   // Must be 1-65535. The agent maps it to a host port it allocates itself.
-  uint32 container_port = 3;
-  Limits limits = 4;
+  uint32 container_port = 4;
+  Limits limits = 5;
   // Environment variables, in order.
-  repeated EnvVar env = 5;
+  repeated EnvVar env = 6;
 }
 
 message RunReplicaResponse {
@@ -73,7 +75,7 @@ message Limits {
 
 // ImageRef points to an exact image in the registry.
 message ImageRef {
-  // Repository including the registry host, e.g. "192.168.252.1:5000/myapp-42".
+  // Repository including the registry host, e.g. "192.168.252.1:5050/myapp-42".
   string repository = 1;
   // Content digest, e.g. "sha256:9f86...". Required: replicas run by digest only.
   string digest = 2;
@@ -82,14 +84,15 @@ message ImageRef {
 // Replica is what the agent observes on the node, not what was requested.
 message Replica {
   string replica_id = 1;
-  ReplicaState state = 2;
+  string app_id = 2;
+  ReplicaState state = 3;
   // Host port allocated by the agent; this is the upstream address for nginx.
-  uint32 host_port = 3;
+  uint32 host_port = 4;
   // Image actually running; lets reconciliation tell old replicas from new.
-  ImageRef image = 4;
-  google.protobuf.Timestamp started_at = 5;
+  ImageRef image = 5;
+  google.protobuf.Timestamp started_at = 6;
   // Process exit code. Set only when state is REPLICA_STATE_EXITED.
-  optional int32 exit_code = 6;
+  optional int32 exit_code = 7;
 }
 
 message StopReplicaRequest {

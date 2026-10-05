@@ -76,13 +76,15 @@ func (ReplicaState) EnumDescriptor() ([]byte, []int) {
 type RunReplicaRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ReplicaId string                 `protobuf:"bytes,1,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
-	Image     *ImageRef              `protobuf:"bytes,2,opt,name=image,proto3" json:"image,omitempty"`
+	// Application id not name, because name can be changed.
+	AppId string    `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Image *ImageRef `protobuf:"bytes,3,opt,name=image,proto3" json:"image,omitempty"`
 	// Port the application listens on inside the container (e.g. 8000).
 	// Must be 1-65535. The agent maps it to a host port it allocates itself.
-	ContainerPort uint32  `protobuf:"varint,3,opt,name=container_port,json=containerPort,proto3" json:"container_port,omitempty"`
-	Limits        *Limits `protobuf:"bytes,4,opt,name=limits,proto3" json:"limits,omitempty"`
+	ContainerPort uint32  `protobuf:"varint,4,opt,name=container_port,json=containerPort,proto3" json:"container_port,omitempty"`
+	Limits        *Limits `protobuf:"bytes,5,opt,name=limits,proto3" json:"limits,omitempty"`
 	// Environment variables, in order.
-	Env           []*EnvVar `protobuf:"bytes,5,rep,name=env,proto3" json:"env,omitempty"`
+	Env           []*EnvVar `protobuf:"bytes,6,rep,name=env,proto3" json:"env,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -120,6 +122,13 @@ func (*RunReplicaRequest) Descriptor() ([]byte, []int) {
 func (x *RunReplicaRequest) GetReplicaId() string {
 	if x != nil {
 		return x.ReplicaId
+	}
+	return ""
+}
+
+func (x *RunReplicaRequest) GetAppId() string {
+	if x != nil {
+		return x.AppId
 	}
 	return ""
 }
@@ -307,7 +316,7 @@ func (x *Limits) GetMemoryBytes() int64 {
 // ImageRef points to an exact image in the registry.
 type ImageRef struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Repository including the registry host, e.g. "192.168.252.1:5000/myapp-42".
+	// Repository including the registry host, e.g. "192.168.252.1:5050/myapp-42".
 	Repository string `protobuf:"bytes,1,opt,name=repository,proto3" json:"repository,omitempty"`
 	// Content digest, e.g. "sha256:9f86...". Required: replicas run by digest only.
 	Digest        string `protobuf:"bytes,2,opt,name=digest,proto3" json:"digest,omitempty"`
@@ -363,14 +372,15 @@ func (x *ImageRef) GetDigest() string {
 type Replica struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	ReplicaId string                 `protobuf:"bytes,1,opt,name=replica_id,json=replicaId,proto3" json:"replica_id,omitempty"`
-	State     ReplicaState           `protobuf:"varint,2,opt,name=state,proto3,enum=bult.agent.v1.ReplicaState" json:"state,omitempty"`
+	AppId     string                 `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	State     ReplicaState           `protobuf:"varint,3,opt,name=state,proto3,enum=bult.agent.v1.ReplicaState" json:"state,omitempty"`
 	// Host port allocated by the agent; this is the upstream address for nginx.
-	HostPort uint32 `protobuf:"varint,3,opt,name=host_port,json=hostPort,proto3" json:"host_port,omitempty"`
+	HostPort uint32 `protobuf:"varint,4,opt,name=host_port,json=hostPort,proto3" json:"host_port,omitempty"`
 	// Image actually running; lets reconciliation tell old replicas from new.
-	Image     *ImageRef              `protobuf:"bytes,4,opt,name=image,proto3" json:"image,omitempty"`
-	StartedAt *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	Image     *ImageRef              `protobuf:"bytes,5,opt,name=image,proto3" json:"image,omitempty"`
+	StartedAt *timestamppb.Timestamp `protobuf:"bytes,6,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	// Process exit code. Set only when state is REPLICA_STATE_EXITED.
-	ExitCode      *int32 `protobuf:"varint,6,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
+	ExitCode      *int32 `protobuf:"varint,7,opt,name=exit_code,json=exitCode,proto3,oneof" json:"exit_code,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -408,6 +418,13 @@ func (*Replica) Descriptor() ([]byte, []int) {
 func (x *Replica) GetReplicaId() string {
 	if x != nil {
 		return x.ReplicaId
+	}
+	return ""
+}
+
+func (x *Replica) GetAppId() string {
+	if x != nil {
+		return x.AppId
 	}
 	return ""
 }
@@ -896,14 +913,15 @@ var File_bult_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
-	"\x19bult/agent/v1/agent.proto\x12\rbult.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe0\x01\n" +
+	"\x19bult/agent/v1/agent.proto\x12\rbult.agent.v1\x1a\x1fgoogle/protobuf/timestamp.proto\"\xf7\x01\n" +
 	"\x11RunReplicaRequest\x12\x1d\n" +
 	"\n" +
-	"replica_id\x18\x01 \x01(\tR\treplicaId\x12-\n" +
-	"\x05image\x18\x02 \x01(\v2\x17.bult.agent.v1.ImageRefR\x05image\x12%\n" +
-	"\x0econtainer_port\x18\x03 \x01(\rR\rcontainerPort\x12-\n" +
-	"\x06limits\x18\x04 \x01(\v2\x15.bult.agent.v1.LimitsR\x06limits\x12'\n" +
-	"\x03env\x18\x05 \x03(\v2\x15.bult.agent.v1.EnvVarR\x03env\"F\n" +
+	"replica_id\x18\x01 \x01(\tR\treplicaId\x12\x15\n" +
+	"\x06app_id\x18\x02 \x01(\tR\x05appId\x12-\n" +
+	"\x05image\x18\x03 \x01(\v2\x17.bult.agent.v1.ImageRefR\x05image\x12%\n" +
+	"\x0econtainer_port\x18\x04 \x01(\rR\rcontainerPort\x12-\n" +
+	"\x06limits\x18\x05 \x01(\v2\x15.bult.agent.v1.LimitsR\x06limits\x12'\n" +
+	"\x03env\x18\x06 \x03(\v2\x15.bult.agent.v1.EnvVarR\x03env\"F\n" +
 	"\x12RunReplicaResponse\x120\n" +
 	"\areplica\x18\x01 \x01(\v2\x16.bult.agent.v1.ReplicaR\areplica\"2\n" +
 	"\x06EnvVar\x12\x12\n" +
@@ -916,16 +934,17 @@ const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"repository\x18\x01 \x01(\tR\n" +
 	"repository\x12\x16\n" +
-	"\x06digest\x18\x02 \x01(\tR\x06digest\"\x92\x02\n" +
+	"\x06digest\x18\x02 \x01(\tR\x06digest\"\xa9\x02\n" +
 	"\aReplica\x12\x1d\n" +
 	"\n" +
-	"replica_id\x18\x01 \x01(\tR\treplicaId\x121\n" +
-	"\x05state\x18\x02 \x01(\x0e2\x1b.bult.agent.v1.ReplicaStateR\x05state\x12\x1b\n" +
-	"\thost_port\x18\x03 \x01(\rR\bhostPort\x12-\n" +
-	"\x05image\x18\x04 \x01(\v2\x17.bult.agent.v1.ImageRefR\x05image\x129\n" +
+	"replica_id\x18\x01 \x01(\tR\treplicaId\x12\x15\n" +
+	"\x06app_id\x18\x02 \x01(\tR\x05appId\x121\n" +
+	"\x05state\x18\x03 \x01(\x0e2\x1b.bult.agent.v1.ReplicaStateR\x05state\x12\x1b\n" +
+	"\thost_port\x18\x04 \x01(\rR\bhostPort\x12-\n" +
+	"\x05image\x18\x05 \x01(\v2\x17.bult.agent.v1.ImageRefR\x05image\x129\n" +
 	"\n" +
-	"started_at\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12 \n" +
-	"\texit_code\x18\x06 \x01(\x05H\x00R\bexitCode\x88\x01\x01B\f\n" +
+	"started_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12 \n" +
+	"\texit_code\x18\a \x01(\x05H\x00R\bexitCode\x88\x01\x01B\f\n" +
 	"\n" +
 	"_exit_code\"3\n" +
 	"\x12StopReplicaRequest\x12\x1d\n" +
