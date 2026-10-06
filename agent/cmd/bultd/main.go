@@ -13,6 +13,7 @@ import (
 
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
 	"github.com/thelol3882/bult/agent/internal/docker"
+	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/reflection"
@@ -22,8 +23,17 @@ var version = "dev"
 
 const shutdownTimeout = 10 * time.Second
 
+type config struct {
+	addr    string
+	portMin int
+	portMax int
+}
+
 func main() {
-	addr := flag.String("addr", ":50051", "address to listen on")
+	var cfg config
+	flag.StringVar(&cfg.addr, "addr", ":50051", "address to listen on")
+	flag.IntVar(&cfg.portMin, "port-min", 20000, "lowest host port to allocate")
+	flag.IntVar(&cfg.portMax, "port-max", 29999, "highest host port to allocate")
 	showVersion := flag.Bool("version", false, "print version and exit 0")
 
 	flag.Parse()
@@ -33,27 +43,36 @@ func main() {
 		return
 	}
 
-	if err := run(*addr); err != nil {
+	if err := run(cfg); err != nil {
 		slog.Error("bultd failed", "err", err)
 		os.Exit(1)
 	}
 }
 
-func run(addr string) error {
+func run(cfg config) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	lis, err := net.Listen("tcp", addr)
+	lis, err := net.Listen("tcp", cfg.addr)
 	if err != nil {
 		return err
 	}
 	defer lis.Close()
 
-	dc, err := docker.New()
+	alloc, err := ports.New(cfg.portMin, cfg.portMax)
+	if err != nil {
+		return fmt.Errorf("init port allocator: %w", err)
+	}
+
+	dc, err := docker.New(alloc)
 	if err != nil {
 		return err
 	}
 	defer dc.Close()
+
+	if err := dc.LoadPorts(ctx); err != nil {
+		return fmt.Errorf("load replica ports: %w", err)
+	}
 
 	grpcServer := grpc.NewServer()
 	impl := server.NewRuntime(dc)
@@ -65,7 +84,7 @@ func run(addr string) error {
 	if err != nil {
 		hostname = "unknown"
 	}
-	slog.Info("listening", "addr", addr, "version", version, "hostname", hostname)
+	slog.Info("listening", "addr", cfg.addr, "version", version, "hostname", hostname)
 
 	serveErr := make(chan error, 1)
 	go func() {

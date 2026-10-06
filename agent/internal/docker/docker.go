@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/moby/moby/client"
+	"github.com/thelol3882/bult/agent/internal/ports"
 )
 
 // Labels put on every bult-managed object. They are the agent's only memory
@@ -19,18 +20,20 @@ const (
 
 // Client runs bult replicas on the local Docker daemon.
 type Client struct {
-	api *client.Client
+	api   *client.Client
+	ports *ports.Allocator
 }
 
 // New connects to the Docker daemon configured by the environment.
-func New() (*Client, error) {
+func New(alloc *ports.Allocator) (*Client, error) {
 	cli, err := client.New(client.FromEnv)
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
 
 	return &Client{
-		api: cli,
+		api:   cli,
+		ports: alloc,
 	}, nil
 }
 

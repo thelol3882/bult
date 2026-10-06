@@ -2,12 +2,14 @@ package docker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/netip"
 	"strconv"
 	"time"
 
+	"github.com/containerd/errdefs"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
@@ -52,13 +54,14 @@ const (
 
 // Replica is a replica as Docker currently sees it.
 type Replica struct {
-	ReplicaID string
-	AppID     string
-	State     State
-	HostPort  int
-	Image     ImageRef
-	StartedAt time.Time
-	ExitCode  int // meaningful only when State == StateExited
+	ReplicaID     string
+	AppID         string
+	State         State
+	HostPort      int
+	ContainerPort int
+	Image         ImageRef
+	StartedAt     time.Time
+	ExitCode      int // meaningful only when State == StateExited
 }
 
 // containerName returns the container name of a replica: "bult-<replicaID>".
@@ -70,8 +73,32 @@ func containerName(replicaID string) string {
 // Run pulls the image if needed, creates and starts the replica's container,
 // and returns it as Docker reports it.
 func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
-	err := c.ensureImage(ctx, spec.Image.String())
+	name := containerName(spec.ReplicaID)
+
+	existing, err := c.inspectReplica(ctx, name)
+	if err == nil {
+		if sameIdentity(existing, spec) {
+			return existing, nil
+		}
+		return Replica{}, fmt.Errorf("run replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return Replica{}, fmt.Errorf("inspect existing replica: %w", err)
+	}
+
+	port, err := c.ports.Reserve()
 	if err != nil {
+		return Replica{}, fmt.Errorf("reserve port: %w", err)
+	}
+
+	var committed bool
+	defer func() {
+		if !committed {
+			c.ports.Release(port)
+		}
+	}()
+
+	if err := c.ensureImage(ctx, spec.Image.String()); err != nil {
 		return Replica{}, err
 	}
 
@@ -102,7 +129,7 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 				labelReplicaID:     spec.ReplicaID,
 				labelImageDigest:   spec.Image.Digest,
 				labelImageRepo:     spec.Image.Repository,
-				labelContainerPort: targetPort.String(),
+				labelContainerPort: portStr,
 			},
 			ExposedPorts: network.PortSet{
 				targetPort: struct{}{},
@@ -118,7 +145,7 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 				targetPort: []network.PortBinding{
 					{
 						HostIP:   netip.IPv4Unspecified(),
-						HostPort: "",
+						HostPort: strconv.Itoa(port),
 					},
 				},
 			},
@@ -131,6 +158,16 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 	})
 
 	if err != nil {
+		if errdefs.IsConflict(err) {
+			existing, inspectErr := c.inspectReplica(ctx, name)
+			if inspectErr != nil {
+				return Replica{}, fmt.Errorf("inspect after create conflict: %w", inspectErr)
+			}
+			if sameIdentity(existing, spec) {
+				return existing, nil
+			}
+			return Replica{}, fmt.Errorf("run replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
+		}
 		return Replica{}, fmt.Errorf("create container: %w", err)
 	}
 
@@ -147,7 +184,14 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 		return Replica{}, fmt.Errorf("start container: %w", err)
 	}
 
-	return c.inspectReplica(ctx, containerID)
+	committed = true
+
+	replica, err := c.inspectReplica(ctx, containerID)
+	if err != nil {
+		return Replica{}, fmt.Errorf("inspect created replica: %w", err)
+	}
+
+	return replica, nil
 }
 
 // inspectReplica reads a container back from Docker and maps it to Replica:
@@ -156,6 +200,9 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replica, error) {
 	insRes, err := c.api.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {
+		if errdefs.IsNotFound(err) {
+			return Replica{}, fmt.Errorf("inspect replica %s: %w", containerID, ErrNotFound)
+		}
 		return Replica{}, fmt.Errorf("inspect container %s: %w", containerID, err)
 	}
 
@@ -191,33 +238,36 @@ func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replic
 		}
 	}
 
-	if replica.State == StateRunning {
-		rawPort, ok := labels[labelContainerPort]
-		if !ok || rawPort == "" {
-			return Replica{}, fmt.Errorf("missing %q label on container %s", labelContainerPort, containerID)
-		}
-
-		key, err := network.ParsePort(rawPort)
-		if err != nil {
-			return Replica{}, fmt.Errorf("bad label %q value %q: %w", labelContainerPort, rawPort, err)
-		}
-
-		var bindings []network.PortBinding
-		if insRes.Container.NetworkSettings != nil && insRes.Container.NetworkSettings.Ports != nil {
-			bindings = insRes.Container.NetworkSettings.Ports[key]
-		}
-
-		if len(bindings) == 0 {
-			return Replica{}, fmt.Errorf("replica %s is running but port %s not published", replica.ReplicaID, rawPort)
-		}
-
-		hostPort, err := strconv.Atoi(bindings[0].HostPort)
-		if err != nil {
-			return Replica{}, fmt.Errorf("invalid host port string %q for replica %s: %w", bindings[0].HostPort, replica.ReplicaID, err)
-		}
-
-		replica.HostPort = hostPort
+	rawPort, ok := labels[labelContainerPort]
+	if !ok || rawPort == "" {
+		return Replica{}, fmt.Errorf("missing %q label on container %s", labelContainerPort, containerID)
 	}
+
+	containerPort, err := strconv.Atoi(rawPort)
+	if err != nil {
+		return Replica{}, fmt.Errorf("bad label %q value %q: %w", labelContainerPort, rawPort, err)
+	}
+	replica.ContainerPort = containerPort
+
+	key, err := network.ParsePort(rawPort)
+	if err != nil {
+		return Replica{}, fmt.Errorf("bad label %q value %q: %w", labelContainerPort, rawPort, err)
+	}
+
+	var bindings []network.PortBinding
+	if insRes.Container.HostConfig != nil && insRes.Container.HostConfig.PortBindings != nil {
+		bindings = insRes.Container.HostConfig.PortBindings[key]
+	}
+
+	if len(bindings) == 0 {
+		return Replica{}, fmt.Errorf("replica %s missing host port binding for container port %s", replica.ReplicaID, rawPort)
+	}
+
+	hostPort, err := strconv.Atoi(bindings[0].HostPort)
+	if err != nil {
+		return Replica{}, fmt.Errorf("invalid host port string %q for replica %s: %w", bindings[0].HostPort, replica.ReplicaID, err)
+	}
+	replica.HostPort = hostPort
 
 	return replica, nil
 }
