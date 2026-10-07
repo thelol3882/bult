@@ -343,3 +343,203 @@ var RuntimeService_ServiceDesc = grpc.ServiceDesc{
 	},
 	Metadata: "bult/agent/v1/agent.proto",
 }
+
+const (
+	BuildService_StartDeploy_FullMethodName  = "/bult.agent.v1.BuildService/StartDeploy"
+	BuildService_GetDeploy_FullMethodName    = "/bult.agent.v1.BuildService/GetDeploy"
+	BuildService_CancelDeploy_FullMethodName = "/bult.agent.v1.BuildService/CancelDeploy"
+)
+
+// BuildServiceClient is the client API for BuildService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// BuildService builds and packages application images on a builder node.
+// All deploy IDs are issued by the control plane; the agent treats them as opaque.
+type BuildServiceClient interface {
+	// StartDeploy validates the spec, starts the deploy job asynchronously in the background,
+	// and returns immediately with state RUNNING.
+	// Idempotent: calling with an existing deploy_id and matching spec returns the current
+	// job; calling with an existing deploy_id but different spec returns ALREADY_EXISTS.
+	StartDeploy(ctx context.Context, in *StartDeployRequest, opts ...grpc.CallOption) (*StartDeployResponse, error)
+	// GetDeploy returns the current state of a deploy job, restoring from disk if
+	// the agent restarted.
+	GetDeploy(ctx context.Context, in *GetDeployRequest, opts ...grpc.CallOption) (*GetDeployResponse, error)
+	// CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
+	// finished deploy is a no-op and returns its final state with status OK.
+	CancelDeploy(ctx context.Context, in *CancelDeployRequest, opts ...grpc.CallOption) (*CancelDeployResponse, error)
+}
+
+type buildServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewBuildServiceClient(cc grpc.ClientConnInterface) BuildServiceClient {
+	return &buildServiceClient{cc}
+}
+
+func (c *buildServiceClient) StartDeploy(ctx context.Context, in *StartDeployRequest, opts ...grpc.CallOption) (*StartDeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(StartDeployResponse)
+	err := c.cc.Invoke(ctx, BuildService_StartDeploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *buildServiceClient) GetDeploy(ctx context.Context, in *GetDeployRequest, opts ...grpc.CallOption) (*GetDeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetDeployResponse)
+	err := c.cc.Invoke(ctx, BuildService_GetDeploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *buildServiceClient) CancelDeploy(ctx context.Context, in *CancelDeployRequest, opts ...grpc.CallOption) (*CancelDeployResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CancelDeployResponse)
+	err := c.cc.Invoke(ctx, BuildService_CancelDeploy_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// BuildServiceServer is the server API for BuildService service.
+// All implementations must embed UnimplementedBuildServiceServer
+// for forward compatibility.
+//
+// BuildService builds and packages application images on a builder node.
+// All deploy IDs are issued by the control plane; the agent treats them as opaque.
+type BuildServiceServer interface {
+	// StartDeploy validates the spec, starts the deploy job asynchronously in the background,
+	// and returns immediately with state RUNNING.
+	// Idempotent: calling with an existing deploy_id and matching spec returns the current
+	// job; calling with an existing deploy_id but different spec returns ALREADY_EXISTS.
+	StartDeploy(context.Context, *StartDeployRequest) (*StartDeployResponse, error)
+	// GetDeploy returns the current state of a deploy job, restoring from disk if
+	// the agent restarted.
+	GetDeploy(context.Context, *GetDeployRequest) (*GetDeployResponse, error)
+	// CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
+	// finished deploy is a no-op and returns its final state with status OK.
+	CancelDeploy(context.Context, *CancelDeployRequest) (*CancelDeployResponse, error)
+	mustEmbedUnimplementedBuildServiceServer()
+}
+
+// UnimplementedBuildServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedBuildServiceServer struct{}
+
+func (UnimplementedBuildServiceServer) StartDeploy(context.Context, *StartDeployRequest) (*StartDeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method StartDeploy not implemented")
+}
+func (UnimplementedBuildServiceServer) GetDeploy(context.Context, *GetDeployRequest) (*GetDeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetDeploy not implemented")
+}
+func (UnimplementedBuildServiceServer) CancelDeploy(context.Context, *CancelDeployRequest) (*CancelDeployResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelDeploy not implemented")
+}
+func (UnimplementedBuildServiceServer) mustEmbedUnimplementedBuildServiceServer() {}
+func (UnimplementedBuildServiceServer) testEmbeddedByValue()                      {}
+
+// UnsafeBuildServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to BuildServiceServer will
+// result in compilation errors.
+type UnsafeBuildServiceServer interface {
+	mustEmbedUnimplementedBuildServiceServer()
+}
+
+func RegisterBuildServiceServer(s grpc.ServiceRegistrar, srv BuildServiceServer) {
+	// If the following call panics, it indicates UnimplementedBuildServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&BuildService_ServiceDesc, srv)
+}
+
+func _BuildService_StartDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(StartDeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BuildServiceServer).StartDeploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BuildService_StartDeploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BuildServiceServer).StartDeploy(ctx, req.(*StartDeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BuildService_GetDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetDeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BuildServiceServer).GetDeploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BuildService_GetDeploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BuildServiceServer).GetDeploy(ctx, req.(*GetDeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _BuildService_CancelDeploy_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelDeployRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(BuildServiceServer).CancelDeploy(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: BuildService_CancelDeploy_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(BuildServiceServer).CancelDeploy(ctx, req.(*CancelDeployRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// BuildService_ServiceDesc is the grpc.ServiceDesc for BuildService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var BuildService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "bult.agent.v1.BuildService",
+	HandlerType: (*BuildServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "StartDeploy",
+			Handler:    _BuildService_StartDeploy_Handler,
+		},
+		{
+			MethodName: "GetDeploy",
+			Handler:    _BuildService_GetDeploy_Handler,
+		},
+		{
+			MethodName: "CancelDeploy",
+			Handler:    _BuildService_CancelDeploy_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "bult/agent/v1/agent.proto",
+}

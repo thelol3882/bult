@@ -34,12 +34,39 @@ service RuntimeService {
   rpc Logs(LogsRequest) returns (stream LogsResponse);
 }
 
+// BuildService builds and packages application images on a builder node.
+// All deploy IDs are issued by the control plane; the agent treats them as opaque.
+service BuildService {
+  // StartDeploy validates the spec, starts the deploy job asynchronously in the background,
+  // and returns immediately with state RUNNING.
+  // Idempotent: calling with an existing deploy_id and matching spec returns the current
+  // job; calling with an existing deploy_id but different spec returns ALREADY_EXISTS.
+  rpc StartDeploy(StartDeployRequest) returns (StartDeployResponse);
+
+  // GetDeploy returns the current state of a deploy job, restoring from disk if
+  // the agent restarted.
+  rpc GetDeploy(GetDeployRequest) returns (GetDeployResponse);
+
+  // CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
+  // finished deploy is a no-op and returns its final state with status OK.
+  rpc CancelDeploy(CancelDeployRequest) returns (CancelDeployResponse);
+}
+
 // ReplicaState is the observed state of a replica's container.
 enum ReplicaState {
   REPLICA_STATE_UNSPECIFIED = 0;
   REPLICA_STATE_RUNNING = 1;
   // The container has stopped (crashed or stopped on request); logs are kept.
   REPLICA_STATE_EXITED = 2;
+}
+
+// DeployState is the lifecycle state of a build/deploy job.
+enum DeployState {
+  DEPLOY_STATE_UNSPECIFIED = 0;
+  DEPLOY_STATE_RUNNING = 1;
+  DEPLOY_STATE_SUCCEEDED = 2;
+  DEPLOY_STATE_FAILED = 3;
+  DEPLOY_STATE_CANCELLED = 4;
 }
 
 message RunReplicaRequest {
@@ -136,4 +163,56 @@ message LogsResponse {
   // Raw output bytes. Not guaranteed to be valid UTF-8 (or to end on a line
   // or character boundary); decode on the consumer side.
   bytes data = 1;
+}
+
+// Source points to the Git repository and revision to be built.
+message Source {
+  // HTTPS repository clone URL, e.g. "https://github.com/org/repo.git".
+  string repo_url = 1;
+  // Branch to clone and build from.
+  string branch = 2;
+}
+
+// Deploy represents the current execution state of a build/deploy job on the agent.
+message Deploy {
+  string deploy_id = 1;
+  string app_id = 2;
+  DeployState state = 3;
+  // Git commit SHA checked out for the build.
+  string commit_sha = 4;
+  // Image built and pushed to the registry. Set only when state is DEPLOY_STATE_SUCCEEDED.
+  // Matches the exact ImageRef structure expected by RuntimeService.RunReplica.
+  ImageRef image = 5;
+  // Human-readable error message explaining build failure. Set only when state is DEPLOY_STATE_FAILED.
+  string error = 6;
+  google.protobuf.Timestamp started_at = 7;
+  // Timestamp when the deploy reached a terminal state (SUCCEEDED, FAILED, CANCELLED).
+  // Unset while state is DEPLOY_STATE_RUNNING.
+  google.protobuf.Timestamp finished_at = 8;
+}
+
+message StartDeployRequest {
+  string deploy_id = 1;
+  string app_id = 2;
+  Source source = 3;
+}
+
+message StartDeployResponse {
+  Deploy deploy = 1;
+}
+
+message GetDeployRequest {
+  string deploy_id = 1;
+}
+
+message GetDeployResponse {
+  Deploy deploy = 1;
+}
+
+message CancelDeployRequest {
+  string deploy_id = 1;
+}
+
+message CancelDeployResponse {
+  Deploy deploy = 1;
 }

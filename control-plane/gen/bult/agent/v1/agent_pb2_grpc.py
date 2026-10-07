@@ -308,3 +308,175 @@ class RuntimeService:
             timeout,
             metadata,
             _registered_method=True)
+
+
+class BuildServiceStub:
+    """BuildService builds and packages application images on a builder node.
+    All deploy IDs are issued by the control plane; the agent treats them as opaque.
+    """
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.StartDeploy = channel.unary_unary(
+                '/bult.agent.v1.BuildService/StartDeploy',
+                request_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployRequest.SerializeToString,
+                response_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployResponse.FromString,
+                _registered_method=True)
+        self.GetDeploy = channel.unary_unary(
+                '/bult.agent.v1.BuildService/GetDeploy',
+                request_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployRequest.SerializeToString,
+                response_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployResponse.FromString,
+                _registered_method=True)
+        self.CancelDeploy = channel.unary_unary(
+                '/bult.agent.v1.BuildService/CancelDeploy',
+                request_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.SerializeToString,
+                response_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.FromString,
+                _registered_method=True)
+
+
+class BuildServiceServicer:
+    """BuildService builds and packages application images on a builder node.
+    All deploy IDs are issued by the control plane; the agent treats them as opaque.
+    """
+
+    def StartDeploy(self, request, context):
+        """StartDeploy validates the spec, starts the deploy job asynchronously in the background,
+        and returns immediately with state RUNNING.
+        Idempotent: calling with an existing deploy_id and matching spec returns the current
+        job; calling with an existing deploy_id but different spec returns ALREADY_EXISTS.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetDeploy(self, request, context):
+        """GetDeploy returns the current state of a deploy job, restoring from disk if
+        the agent restarted.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CancelDeploy(self, request, context):
+        """CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
+        finished deploy is a no-op and returns its final state with status OK.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_BuildServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'StartDeploy': grpc.unary_unary_rpc_method_handler(
+                    servicer.StartDeploy,
+                    request_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployRequest.FromString,
+                    response_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployResponse.SerializeToString,
+            ),
+            'GetDeploy': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDeploy,
+                    request_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployRequest.FromString,
+                    response_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployResponse.SerializeToString,
+            ),
+            'CancelDeploy': grpc.unary_unary_rpc_method_handler(
+                    servicer.CancelDeploy,
+                    request_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.FromString,
+                    response_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'bult.agent.v1.BuildService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('bult.agent.v1.BuildService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class BuildService:
+    """BuildService builds and packages application images on a builder node.
+    All deploy IDs are issued by the control plane; the agent treats them as opaque.
+    """
+
+    @staticmethod
+    def StartDeploy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/bult.agent.v1.BuildService/StartDeploy',
+            bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployRequest.SerializeToString,
+            bult_dot_agent_dot_v1_dot_agent__pb2.StartDeployResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDeploy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/bult.agent.v1.BuildService/GetDeploy',
+            bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployRequest.SerializeToString,
+            bult_dot_agent_dot_v1_dot_agent__pb2.GetDeployResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CancelDeploy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/bult.agent.v1.BuildService/CancelDeploy',
+            bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.SerializeToString,
+            bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)

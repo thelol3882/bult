@@ -15,9 +15,22 @@ class ReplicaState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
     REPLICA_STATE_UNSPECIFIED: _ClassVar[ReplicaState]
     REPLICA_STATE_RUNNING: _ClassVar[ReplicaState]
     REPLICA_STATE_EXITED: _ClassVar[ReplicaState]
+
+class DeployState(int, metaclass=_enum_type_wrapper.EnumTypeWrapper):
+    __slots__ = ()
+    DEPLOY_STATE_UNSPECIFIED: _ClassVar[DeployState]
+    DEPLOY_STATE_RUNNING: _ClassVar[DeployState]
+    DEPLOY_STATE_SUCCEEDED: _ClassVar[DeployState]
+    DEPLOY_STATE_FAILED: _ClassVar[DeployState]
+    DEPLOY_STATE_CANCELLED: _ClassVar[DeployState]
 REPLICA_STATE_UNSPECIFIED: ReplicaState
 REPLICA_STATE_RUNNING: ReplicaState
 REPLICA_STATE_EXITED: ReplicaState
+DEPLOY_STATE_UNSPECIFIED: DeployState
+DEPLOY_STATE_RUNNING: DeployState
+DEPLOY_STATE_SUCCEEDED: DeployState
+DEPLOY_STATE_FAILED: DeployState
+DEPLOY_STATE_CANCELLED: DeployState
 
 class RunReplicaRequest(_message.Message):
     __slots__ = ("replica_id", "app_id", "image", "container_port", "limits", "env")
@@ -142,3 +155,71 @@ class LogsResponse(_message.Message):
     DATA_FIELD_NUMBER: _ClassVar[int]
     data: bytes
     def __init__(self, data: _Optional[bytes] = ...) -> None: ...
+
+class Source(_message.Message):
+    __slots__ = ("repo_url", "branch")
+    REPO_URL_FIELD_NUMBER: _ClassVar[int]
+    BRANCH_FIELD_NUMBER: _ClassVar[int]
+    repo_url: str
+    branch: str
+    def __init__(self, repo_url: _Optional[str] = ..., branch: _Optional[str] = ...) -> None: ...
+
+class Deploy(_message.Message):
+    __slots__ = ("deploy_id", "app_id", "state", "commit_sha", "image", "error", "started_at", "finished_at")
+    DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
+    APP_ID_FIELD_NUMBER: _ClassVar[int]
+    STATE_FIELD_NUMBER: _ClassVar[int]
+    COMMIT_SHA_FIELD_NUMBER: _ClassVar[int]
+    IMAGE_FIELD_NUMBER: _ClassVar[int]
+    ERROR_FIELD_NUMBER: _ClassVar[int]
+    STARTED_AT_FIELD_NUMBER: _ClassVar[int]
+    FINISHED_AT_FIELD_NUMBER: _ClassVar[int]
+    deploy_id: str
+    app_id: str
+    state: DeployState
+    commit_sha: str
+    image: ImageRef
+    error: str
+    started_at: _timestamp_pb2.Timestamp
+    finished_at: _timestamp_pb2.Timestamp
+    def __init__(self, deploy_id: _Optional[str] = ..., app_id: _Optional[str] = ..., state: _Optional[_Union[DeployState, str]] = ..., commit_sha: _Optional[str] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., error: _Optional[str] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., finished_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
+
+class StartDeployRequest(_message.Message):
+    __slots__ = ("deploy_id", "app_id", "source")
+    DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
+    APP_ID_FIELD_NUMBER: _ClassVar[int]
+    SOURCE_FIELD_NUMBER: _ClassVar[int]
+    deploy_id: str
+    app_id: str
+    source: Source
+    def __init__(self, deploy_id: _Optional[str] = ..., app_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ...) -> None: ...
+
+class StartDeployResponse(_message.Message):
+    __slots__ = ("deploy",)
+    DEPLOY_FIELD_NUMBER: _ClassVar[int]
+    deploy: Deploy
+    def __init__(self, deploy: _Optional[_Union[Deploy, _Mapping]] = ...) -> None: ...
+
+class GetDeployRequest(_message.Message):
+    __slots__ = ("deploy_id",)
+    DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
+    deploy_id: str
+    def __init__(self, deploy_id: _Optional[str] = ...) -> None: ...
+
+class GetDeployResponse(_message.Message):
+    __slots__ = ("deploy",)
+    DEPLOY_FIELD_NUMBER: _ClassVar[int]
+    deploy: Deploy
+    def __init__(self, deploy: _Optional[_Union[Deploy, _Mapping]] = ...) -> None: ...
+
+class CancelDeployRequest(_message.Message):
+    __slots__ = ("deploy_id",)
+    DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
+    deploy_id: str
+    def __init__(self, deploy_id: _Optional[str] = ...) -> None: ...
+
+class CancelDeployResponse(_message.Message):
+    __slots__ = ("deploy",)
+    DEPLOY_FIELD_NUMBER: _ClassVar[int]
+    deploy: Deploy
+    def __init__(self, deploy: _Optional[_Union[Deploy, _Mapping]] = ...) -> None: ...
