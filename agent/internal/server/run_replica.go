@@ -21,11 +21,7 @@ func (r *Runtime) RunReplica(ctx context.Context, req *agentv1.RunReplicaRequest
 	spec := toSpec(req)
 	replica, err := r.docker.Run(ctx, spec)
 	if err != nil {
-		code := codes.Internal
-		if errors.Is(err, docker.ErrSpecMismatch) {
-			code = codes.AlreadyExists
-		}
-		return nil, status.Errorf(code, "run replica: %v", err)
+		return nil, toStatus("run replica", err)
 	}
 
 	return &agentv1.RunReplicaResponse{

@@ -18,17 +18,20 @@ func (c *Client) ensureImage(ctx context.Context, ref string) error {
 	}
 
 	if !errdefs.IsNotFound(err) {
-		return fmt.Errorf("inspect image %s: %w", ref, err)
+		return dockerErr(fmt.Sprintf("inspect image %s", ref), err)
 	}
 
 	response, err := c.api.ImagePull(ctx, ref, client.ImagePullOptions{})
 	if err != nil {
-		return fmt.Errorf("pull image %s: %w", ref, err)
+		if errdefs.IsNotFound(err) {
+			return fmt.Errorf("pull image %s: %w: %w", ref, err, ErrImageNotFound)
+		}
+		return dockerErr(fmt.Sprintf("pull image %s", ref), err)
 	}
 	defer response.Close()
 
 	if err := response.Wait(ctx); err != nil {
-		return fmt.Errorf("wait for pull %s: %w", ref, err)
+		return dockerErr(fmt.Sprintf("wait for pull %s", ref), err)
 	}
 
 	return nil

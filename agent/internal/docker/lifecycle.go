@@ -22,7 +22,7 @@ func (c *Client) LoadPorts(ctx context.Context) error {
 		Filters: filters,
 	})
 	if err != nil {
-		return fmt.Errorf("list containers: %w", err)
+		return dockerErr("list containers", err)
 	}
 
 	totalClaimed := 0
@@ -30,7 +30,7 @@ func (c *Client) LoadPorts(ctx context.Context) error {
 	for _, container := range listRes.Items {
 		insRes, err := c.api.ContainerInspect(ctx, container.ID, client.ContainerInspectOptions{})
 		if err != nil {
-			return fmt.Errorf("inspect container: %w", err)
+			return dockerErr("inspect container", err)
 		}
 
 		if insRes.Container.HostConfig == nil {
@@ -68,7 +68,7 @@ func (c *Client) Stop(ctx context.Context, replicaID string) (Replica, error) {
 		if errdefs.IsNotFound(err) {
 			return Replica{}, fmt.Errorf("stop %s: %w", replicaID, ErrNotFound)
 		}
-		return Replica{}, fmt.Errorf("stop container %s: %w", name, err)
+		return Replica{}, dockerErr(fmt.Sprintf("stop container %s", name), err)
 	}
 
 	replica, err := c.inspectReplica(ctx, name)
@@ -88,7 +88,7 @@ func (c *Client) Start(ctx context.Context, replicaID string) (Replica, error) {
 		if errdefs.IsNotFound(err) {
 			return Replica{}, fmt.Errorf("start %s: %w", replicaID, ErrNotFound)
 		}
-		return Replica{}, fmt.Errorf("start container %s: %w", replicaID, err)
+		return Replica{}, dockerErr(fmt.Sprintf("start container %s", name), err)
 	}
 
 	replica, err := c.inspectReplica(ctx, name)
@@ -119,7 +119,7 @@ func (c *Client) Remove(ctx context.Context, replicaID string) error {
 		if errdefs.IsNotFound(err) {
 			return nil
 		}
-		return fmt.Errorf("remove container %s: %w", name, err)
+		return dockerErr(fmt.Sprintf("remove container %s", name), err)
 	}
 
 	c.ports.Release(replica.HostPort)
@@ -135,7 +135,7 @@ func (c *Client) List(ctx context.Context) ([]Replica, error) {
 		Filters: filters,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
+		return nil, dockerErr("list containers", err)
 	}
 
 	replicas := make([]Replica, 0, len(listRes.Items))

@@ -24,7 +24,7 @@ func (c *Client) ensureNetwork(ctx context.Context, appID string) (string, error
 	}
 
 	if !errdefs.IsNotFound(err) {
-		return "", fmt.Errorf("inspect network %s: %w", name, err)
+		return "", dockerErr(fmt.Sprintf("inspect network %s", name), err)
 	}
 
 	_, err = c.api.NetworkCreate(ctx, name, client.NetworkCreateOptions{
@@ -38,7 +38,7 @@ func (c *Client) ensureNetwork(ctx context.Context, appID string) (string, error
 		if errdefs.IsAlreadyExists(err) {
 			return name, nil
 		}
-		return "", fmt.Errorf("create network %s: %w", name, err)
+		return "", dockerErr(fmt.Sprintf("create network %s", name), err)
 	}
 
 	return name, nil

@@ -80,7 +80,7 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 		if sameIdentity(existing, spec) {
 			return existing, nil
 		}
-		return Replica{}, fmt.Errorf("run replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
+		return Replica{}, fmt.Errorf("replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return Replica{}, fmt.Errorf("inspect existing replica: %w", err)
@@ -161,14 +161,17 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 		if errdefs.IsConflict(err) {
 			existing, inspectErr := c.inspectReplica(ctx, name)
 			if inspectErr != nil {
+				if errors.Is(inspectErr, ErrNotFound) {
+					return Replica{}, fmt.Errorf("replica %s: %w", spec.ReplicaID, ErrNameRace)
+				}
 				return Replica{}, fmt.Errorf("inspect after create conflict: %w", inspectErr)
 			}
 			if sameIdentity(existing, spec) {
 				return existing, nil
 			}
-			return Replica{}, fmt.Errorf("run replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
+			return Replica{}, fmt.Errorf("replica %s: %w", spec.ReplicaID, ErrSpecMismatch)
 		}
-		return Replica{}, fmt.Errorf("create container: %w", err)
+		return Replica{}, dockerErr("create container", err)
 	}
 
 	containerID := createRes.ID
@@ -181,7 +184,7 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 		if rmErr != nil {
 			slog.Warn("remove container after failed start", "id", containerID, "err", rmErr)
 		}
-		return Replica{}, fmt.Errorf("start container: %w", err)
+		return Replica{}, dockerErr("start container", err)
 	}
 
 	committed = true
@@ -203,7 +206,7 @@ func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replic
 		if errdefs.IsNotFound(err) {
 			return Replica{}, fmt.Errorf("inspect replica %s: %w", containerID, ErrNotFound)
 		}
-		return Replica{}, fmt.Errorf("inspect container %s: %w", containerID, err)
+		return Replica{}, dockerErr(fmt.Sprintf("inspect container %s", containerID), err)
 	}
 
 	labels := insRes.Container.Config.Labels
