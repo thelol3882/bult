@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 
+	"github.com/thelol3882/bult/agent/internal/build"
 	"github.com/thelol3882/bult/agent/internal/docker"
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"google.golang.org/grpc/codes"
@@ -26,9 +27,16 @@ func toStatus(op string, err error) error {
 
 	var code codes.Code
 	switch {
-	case errors.Is(err, docker.ErrNotFound):
+	case errors.Is(err, build.ErrInvalidRepoURL),
+		errors.Is(err, build.ErrInvalidBranch),
+		errors.Is(err, build.ErrInvalidDeployID),
+		errors.Is(err, build.ErrInvalidAppID):
+		code = codes.InvalidArgument
+	case errors.Is(err, build.ErrDeployNotFound),
+		errors.Is(err, docker.ErrNotFound):
 		code = codes.NotFound
-	case errors.Is(err, docker.ErrSpecMismatch):
+	case errors.Is(err, build.ErrDeploySpecMismatch),
+		errors.Is(err, docker.ErrSpecMismatch):
 		code = codes.AlreadyExists
 	case errors.Is(err, docker.ErrImageNotFound):
 		code = codes.FailedPrecondition

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
+	"github.com/thelol3882/bult/agent/internal/build"
 	"github.com/thelol3882/bult/agent/internal/docker"
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
@@ -24,9 +25,12 @@ var version = "dev"
 const shutdownTimeout = 10 * time.Second
 
 type config struct {
-	addr    string
-	portMin int
-	portMax int
+	addr     string
+	portMin  int
+	portMax  int
+	role     string
+	registry string
+	dataDir  string
 }
 
 func main() {
@@ -34,6 +38,9 @@ func main() {
 	flag.StringVar(&cfg.addr, "addr", ":50051", "address to listen on")
 	flag.IntVar(&cfg.portMin, "port-min", 20000, "lowest host port to allocate")
 	flag.IntVar(&cfg.portMax, "port-max", 29999, "highest host port to allocate")
+	flag.StringVar(&cfg.role, "role", "runner", "agent role: runner, builder, or both")
+	flag.StringVar(&cfg.registry, "registry", "", "container registry host (required for builder role)")
+	flag.StringVar(&cfg.dataDir, "data-dir", "/var/lib/bult", "directory for persistent data")
 	showVersion := flag.Bool("version", false, "print version and exit 0")
 
 	flag.Parse()
@@ -41,6 +48,18 @@ func main() {
 	if *showVersion {
 		fmt.Println(version)
 		return
+	}
+
+	switch cfg.role {
+	case "runner", "builder", "both":
+	default:
+		slog.Error("invalid --role, must be runner, builder, or both", "role", cfg.role)
+		os.Exit(2)
+	}
+
+	if (cfg.role == "builder" || cfg.role == "both") && cfg.registry == "" {
+		slog.Error("--registry is required when role is builder or both")
+		os.Exit(2)
 	}
 
 	if err := run(cfg); err != nil {
@@ -70,13 +89,28 @@ func run(cfg config) error {
 	}
 	defer dc.Close()
 
-	if err := dc.LoadPorts(ctx); err != nil {
-		return fmt.Errorf("load replica ports: %w", err)
+	grpcServer := grpc.NewServer()
+
+	isRunner := cfg.role == "runner" || cfg.role == "both"
+	isBuilder := cfg.role == "builder" || cfg.role == "both"
+
+	if isRunner {
+		if err := dc.LoadPorts(ctx); err != nil {
+			return fmt.Errorf("load replica ports: %w", err)
+		}
+		impl := server.NewRuntime(dc)
+		agentv1.RegisterRuntimeServiceServer(grpcServer, impl)
 	}
 
-	grpcServer := grpc.NewServer()
-	impl := server.NewRuntime(dc)
-	agentv1.RegisterRuntimeServiceServer(grpcServer, impl)
+	if isBuilder {
+		store, err := build.NewStore(cfg.dataDir)
+		if err != nil {
+			return fmt.Errorf("init build store: %w", err)
+		}
+		mgr := build.NewManager(ctx, store, dc, cfg.registry)
+		builderServer := server.NewBuilder(mgr)
+		agentv1.RegisterBuildServiceServer(grpcServer, builderServer)
+	}
 
 	reflection.Register(grpcServer)
 
@@ -84,7 +118,7 @@ func run(cfg config) error {
 	if err != nil {
 		hostname = "unknown"
 	}
-	slog.Info("listening", "addr", cfg.addr, "version", version, "hostname", hostname)
+	slog.Info("listening", "addr", cfg.addr, "role", cfg.role, "version", version, "hostname", hostname)
 
 	serveErr := make(chan error, 1)
 	go func() {
