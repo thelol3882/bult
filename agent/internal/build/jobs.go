@@ -52,16 +52,18 @@ type cloneFunc func(ctx context.Context, src Source, parentDir string) (Checkout
 // job is a running build. Fields guarded by Manager.mu.
 type job struct {
 	status Status
-	cancel context.CancelFunc
+	cancel context.CancelCauseFunc
 }
 
 // Manager runs build jobs and is the registry deploy_id → job.
 type Manager struct {
-	baseCtx  context.Context // parent of every job context: NOT a request context
-	store    *Store
-	builder  imageBuilder
-	clone    cloneFunc
-	registry string // e.g. 192.168.252.1:5050 — from the agent's config
+	baseCtx   context.Context // parent of every job context: NOT a request context
+	cancelAll context.CancelCauseFunc
+	wg        sync.WaitGroup
+	store     *Store
+	builder   imageBuilder
+	clone     cloneFunc
+	registry  string // e.g. 192.168.252.1:5050 — from the agent's config
 
 	mu   sync.Mutex
 	jobs map[string]*job
@@ -69,14 +71,16 @@ type Manager struct {
 
 // NewManager wires a job manager. baseCtx is the agent's lifetime context:
 // cancelling it (graceful shutdown) cancels running builds.
-func NewManager(baseCtx context.Context, store *Store, builder imageBuilder, registry string) *Manager {
+func NewManager(parent context.Context, store *Store, builder imageBuilder, registry string) *Manager {
+	baseCtx, cancelAll := context.WithCancelCause(parent)
 	return &Manager{
-		baseCtx:  baseCtx,
-		store:    store,
-		builder:  builder,
-		clone:    Clone,
-		registry: registry,
-		jobs:     make(map[string]*job),
+		baseCtx:   baseCtx,
+		cancelAll: cancelAll,
+		store:     store,
+		builder:   builder,
+		clone:     Clone,
+		registry:  registry,
+		jobs:      make(map[string]*job),
 	}
 }
 
@@ -111,7 +115,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 		return Status{}, fmt.Errorf("check existing deploy on disk: %w", err)
 	}
 
-	jobCtx, cancel := context.WithCancel(m.baseCtx)
+	jobCtx, cancel := context.WithCancelCause(m.baseCtx)
 
 	initialStatus := Status{
 		DeployID:  spec.DeployID,
@@ -124,7 +128,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 	m.mu.Lock()
 	if j, exists := m.jobs[spec.DeployID]; exists {
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		if j.status.AppID != spec.AppID || j.status.Source != spec.Source {
 			return Status{}, fmt.Errorf("%w: deploy %s", ErrDeploySpecMismatch, spec.DeployID)
 		}
@@ -141,10 +145,11 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 		m.mu.Lock()
 		delete(m.jobs, spec.DeployID)
 		m.mu.Unlock()
-		cancel()
+		cancel(nil)
 		return Status{}, fmt.Errorf("write initial status: %w", err)
 	}
 
+	m.wg.Add(1)
 	go m.run(jobCtx, spec.DeployID)
 
 	return initialStatus, nil
@@ -176,7 +181,7 @@ func (m *Manager) Cancel(deployID string) (Status, error) {
 	m.mu.Lock()
 	if j, exists := m.jobs[deployID]; exists {
 		if j.status.State == StateRunning {
-			j.cancel()
+			j.cancel(errCancelledByUser)
 		}
 		st := j.status
 		m.mu.Unlock()
@@ -189,6 +194,8 @@ func (m *Manager) Cancel(deployID string) (Status, error) {
 
 // run executes one build. The only writer of the job's final status.
 func (m *Manager) run(ctx context.Context, deployID string) {
+	defer m.wg.Done()
+
 	var (
 		finalCommitSHA string
 		finalImage     docker.ImageRef
@@ -208,7 +215,7 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	m.mu.Unlock()
 
 	defer func() {
-		defer jobCancel()
+		defer jobCancel(nil)
 
 		now := time.Now()
 
@@ -224,7 +231,7 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 			st.CommitSHA = finalCommitSHA
 			st.Image = finalImage
 		case errors.Is(ctx.Err(), context.Canceled):
-			st.State = StateCancelled
+			st.State, st.Error = finalStateForCancel(ctx)
 		default:
 			st.State = StateFailed
 			st.Error = userError(buildErr)

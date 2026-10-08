@@ -5,6 +5,7 @@ import (
 
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
 	"github.com/thelol3882/bult/agent/internal/build"
+	"google.golang.org/grpc"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -19,6 +20,7 @@ type deployManager interface {
 	Start(ctx context.Context, spec build.Spec) (build.Status, error)
 	Get(deployID string) (build.Status, error)
 	Cancel(deployID string) (build.Status, error)
+	Watch(ctx context.Context, deployID string, offset int64, emit func(build.LogChunk) error) (build.Status, error)
 }
 
 var _ deployManager = (*build.Manager)(nil)
@@ -68,6 +70,30 @@ func (b *Builder) CancelDeploy(ctx context.Context, req *agentv1.CancelDeployReq
 	return &agentv1.CancelDeployResponse{
 		Deploy: toProtoDeploy(st),
 	}, nil
+}
+
+func (b *Builder) WatchDeploy(req *agentv1.WatchDeployRequest, stream grpc.ServerStreamingServer[agentv1.WatchDeployResponse]) error {
+	emit := func(c build.LogChunk) error {
+		return stream.Send(&agentv1.WatchDeployResponse{
+			Event: &agentv1.WatchDeployResponse_Log{
+				Log: &agentv1.LogChunk{
+					Offset: c.Offset,
+					Data:   c.Data,
+				},
+			},
+		})
+	}
+
+	st, err := b.jobs.Watch(stream.Context(), req.GetDeployId(), req.GetOffset(), emit)
+	if err != nil {
+		return toStatus("watch deploy", err)
+	}
+
+	return stream.Send(&agentv1.WatchDeployResponse{
+		Event: &agentv1.WatchDeployResponse_Deploy{
+			Deploy: toProtoDeploy(st),
+		},
+	})
 }
 
 // toProtoDeploy converts an internal build.Status to the protobuf Deploy message.

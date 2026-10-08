@@ -102,12 +102,18 @@ func run(cfg config) error {
 		agentv1.RegisterRuntimeServiceServer(grpcServer, impl)
 	}
 
+	var mgr *build.Manager
 	if isBuilder {
 		store, err := build.NewStore(cfg.dataDir)
 		if err != nil {
 			return fmt.Errorf("init build store: %w", err)
 		}
-		mgr := build.NewManager(ctx, store, dc, cfg.registry)
+		mgr = build.NewManager(context.Background(), store, dc, cfg.registry)
+
+		if _, err := mgr.Recover(); err != nil {
+			return fmt.Errorf("recover abandoned jobs: %w", err)
+		}
+
 		builderServer := server.NewBuilder(mgr)
 		agentv1.RegisterBuildServiceServer(grpcServer, builderServer)
 	}
@@ -130,6 +136,15 @@ func run(cfg config) error {
 		return fmt.Errorf("serve: %w", err)
 	case <-ctx.Done():
 		slog.Info("shutting down")
+	}
+
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
+	defer cancelShutdown()
+
+	if mgr != nil {
+		if err := mgr.Shutdown(shutdownCtx); err != nil {
+			slog.Warn("manager shutdown finished with error", "err", err)
+		}
 	}
 
 	stopped := make(chan struct{})
