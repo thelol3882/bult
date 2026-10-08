@@ -18,7 +18,7 @@ service RuntimeService {
   rpc StopReplica(StopReplicaRequest) returns (StopReplicaResponse);
 
   // StartReplica starts a previously stopped replica.
-  // The host port may differ from before; callers must use the returned one.
+  // The host port is stable across restarts.
   rpc StartReplica(StartReplicaRequest) returns (StartReplicaResponse);
 
   // RemoveReplica deletes a replica together with its logs.
@@ -50,6 +50,12 @@ service BuildService {
   // CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
   // finished deploy is a no-op and returns its final state with status OK.
   rpc CancelDeploy(CancelDeployRequest) returns (CancelDeployResponse);
+
+  // WatchDeploy replays the build log from offset, follows it while the build runs,
+  // and ALWAYS ends with one Deploy message in a terminal state and status OK;
+  // an error status means the watch itself failed (NOT_FOUND, INVALID_ARGUMENT,
+  // INTERNAL, CANCELLED).
+  rpc WatchDeploy(WatchDeployRequest) returns (stream WatchDeployResponse);
 }
 
 // ReplicaState is the observed state of a replica's container.
@@ -215,4 +221,25 @@ message CancelDeployRequest {
 
 message CancelDeployResponse {
   Deploy deploy = 1;
+}
+
+message WatchDeployRequest {
+  string deploy_id = 1;
+  // Offset in bytes into the build log. 0 starts from the beginning;
+  // to resume, pass offset + len(data) from previously received chunks.
+  int64 offset = 2;
+}
+
+message LogChunk {
+  // Byte offset where this chunk starts in the complete build log.
+  int64 offset = 1;
+  // Raw output bytes produced during the build (not guaranteed to be valid UTF-8).
+  bytes data = 2;
+}
+
+message WatchDeployResponse {
+  oneof event {
+    LogChunk log = 1;
+    Deploy deploy = 2;
+  }
 }

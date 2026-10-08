@@ -223,3 +223,27 @@ class CancelDeployResponse(_message.Message):
     DEPLOY_FIELD_NUMBER: _ClassVar[int]
     deploy: Deploy
     def __init__(self, deploy: _Optional[_Union[Deploy, _Mapping]] = ...) -> None: ...
+
+class WatchDeployRequest(_message.Message):
+    __slots__ = ("deploy_id", "offset")
+    DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
+    OFFSET_FIELD_NUMBER: _ClassVar[int]
+    deploy_id: str
+    offset: int
+    def __init__(self, deploy_id: _Optional[str] = ..., offset: _Optional[int] = ...) -> None: ...
+
+class LogChunk(_message.Message):
+    __slots__ = ("offset", "data")
+    OFFSET_FIELD_NUMBER: _ClassVar[int]
+    DATA_FIELD_NUMBER: _ClassVar[int]
+    offset: int
+    data: bytes
+    def __init__(self, offset: _Optional[int] = ..., data: _Optional[bytes] = ...) -> None: ...
+
+class WatchDeployResponse(_message.Message):
+    __slots__ = ("log", "deploy")
+    LOG_FIELD_NUMBER: _ClassVar[int]
+    DEPLOY_FIELD_NUMBER: _ClassVar[int]
+    log: LogChunk
+    deploy: Deploy
+    def __init__(self, log: _Optional[_Union[LogChunk, _Mapping]] = ..., deploy: _Optional[_Union[Deploy, _Mapping]] = ...) -> None: ...

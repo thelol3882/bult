@@ -41,7 +41,7 @@ type RuntimeServiceClient interface {
 	// StopReplica stops a running replica but keeps its container and logs.
 	StopReplica(ctx context.Context, in *StopReplicaRequest, opts ...grpc.CallOption) (*StopReplicaResponse, error)
 	// StartReplica starts a previously stopped replica.
-	// The host port may differ from before; callers must use the returned one.
+	// The host port is stable across restarts.
 	StartReplica(ctx context.Context, in *StartReplicaRequest, opts ...grpc.CallOption) (*StartReplicaResponse, error)
 	// RemoveReplica deletes a replica together with its logs.
 	// Idempotent: removing a replica that no longer exists returns OK.
@@ -145,7 +145,7 @@ type RuntimeServiceServer interface {
 	// StopReplica stops a running replica but keeps its container and logs.
 	StopReplica(context.Context, *StopReplicaRequest) (*StopReplicaResponse, error)
 	// StartReplica starts a previously stopped replica.
-	// The host port may differ from before; callers must use the returned one.
+	// The host port is stable across restarts.
 	StartReplica(context.Context, *StartReplicaRequest) (*StartReplicaResponse, error)
 	// RemoveReplica deletes a replica together with its logs.
 	// Idempotent: removing a replica that no longer exists returns OK.
@@ -348,6 +348,7 @@ const (
 	BuildService_StartDeploy_FullMethodName  = "/bult.agent.v1.BuildService/StartDeploy"
 	BuildService_GetDeploy_FullMethodName    = "/bult.agent.v1.BuildService/GetDeploy"
 	BuildService_CancelDeploy_FullMethodName = "/bult.agent.v1.BuildService/CancelDeploy"
+	BuildService_WatchDeploy_FullMethodName  = "/bult.agent.v1.BuildService/WatchDeploy"
 )
 
 // BuildServiceClient is the client API for BuildService service.
@@ -368,6 +369,11 @@ type BuildServiceClient interface {
 	// CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
 	// finished deploy is a no-op and returns its final state with status OK.
 	CancelDeploy(ctx context.Context, in *CancelDeployRequest, opts ...grpc.CallOption) (*CancelDeployResponse, error)
+	// WatchDeploy replays the build log from offset, follows it while the build runs,
+	// and ALWAYS ends with one Deploy message in a terminal state and status OK;
+	// an error status means the watch itself failed (NOT_FOUND, INVALID_ARGUMENT,
+	// INTERNAL, CANCELLED).
+	WatchDeploy(ctx context.Context, in *WatchDeployRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchDeployResponse], error)
 }
 
 type buildServiceClient struct {
@@ -408,6 +414,25 @@ func (c *buildServiceClient) CancelDeploy(ctx context.Context, in *CancelDeployR
 	return out, nil
 }
 
+func (c *buildServiceClient) WatchDeploy(ctx context.Context, in *WatchDeployRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[WatchDeployResponse], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &BuildService_ServiceDesc.Streams[0], BuildService_WatchDeploy_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[WatchDeployRequest, WatchDeployResponse]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildService_WatchDeployClient = grpc.ServerStreamingClient[WatchDeployResponse]
+
 // BuildServiceServer is the server API for BuildService service.
 // All implementations must embed UnimplementedBuildServiceServer
 // for forward compatibility.
@@ -426,6 +451,11 @@ type BuildServiceServer interface {
 	// CancelDeploy stops an in-flight deploy job. Calling CancelDeploy on an already
 	// finished deploy is a no-op and returns its final state with status OK.
 	CancelDeploy(context.Context, *CancelDeployRequest) (*CancelDeployResponse, error)
+	// WatchDeploy replays the build log from offset, follows it while the build runs,
+	// and ALWAYS ends with one Deploy message in a terminal state and status OK;
+	// an error status means the watch itself failed (NOT_FOUND, INVALID_ARGUMENT,
+	// INTERNAL, CANCELLED).
+	WatchDeploy(*WatchDeployRequest, grpc.ServerStreamingServer[WatchDeployResponse]) error
 	mustEmbedUnimplementedBuildServiceServer()
 }
 
@@ -444,6 +474,9 @@ func (UnimplementedBuildServiceServer) GetDeploy(context.Context, *GetDeployRequ
 }
 func (UnimplementedBuildServiceServer) CancelDeploy(context.Context, *CancelDeployRequest) (*CancelDeployResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method CancelDeploy not implemented")
+}
+func (UnimplementedBuildServiceServer) WatchDeploy(*WatchDeployRequest, grpc.ServerStreamingServer[WatchDeployResponse]) error {
+	return status.Error(codes.Unimplemented, "method WatchDeploy not implemented")
 }
 func (UnimplementedBuildServiceServer) mustEmbedUnimplementedBuildServiceServer() {}
 func (UnimplementedBuildServiceServer) testEmbeddedByValue()                      {}
@@ -520,6 +553,17 @@ func _BuildService_CancelDeploy_Handler(srv interface{}, ctx context.Context, de
 	return interceptor(ctx, in, info, handler)
 }
 
+func _BuildService_WatchDeploy_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(WatchDeployRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(BuildServiceServer).WatchDeploy(m, &grpc.GenericServerStream[WatchDeployRequest, WatchDeployResponse]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type BuildService_WatchDeployServer = grpc.ServerStreamingServer[WatchDeployResponse]
+
 // BuildService_ServiceDesc is the grpc.ServiceDesc for BuildService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -540,6 +584,12 @@ var BuildService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _BuildService_CancelDeploy_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "WatchDeploy",
+			Handler:       _BuildService_WatchDeploy_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "bult/agent/v1/agent.proto",
 }

@@ -1407,6 +1407,196 @@ func (x *CancelDeployResponse) GetDeploy() *Deploy {
 	return nil
 }
 
+type WatchDeployRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	DeployId string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
+	// Offset in bytes into the build log. 0 starts from the beginning;
+	// to resume, pass offset + len(data) from previously received chunks.
+	Offset        int64 `protobuf:"varint,2,opt,name=offset,proto3" json:"offset,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchDeployRequest) Reset() {
+	*x = WatchDeployRequest{}
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchDeployRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchDeployRequest) ProtoMessage() {}
+
+func (x *WatchDeployRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchDeployRequest.ProtoReflect.Descriptor instead.
+func (*WatchDeployRequest) Descriptor() ([]byte, []int) {
+	return file_bult_agent_v1_agent_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *WatchDeployRequest) GetDeployId() string {
+	if x != nil {
+		return x.DeployId
+	}
+	return ""
+}
+
+func (x *WatchDeployRequest) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+type LogChunk struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Byte offset where this chunk starts in the complete build log.
+	Offset int64 `protobuf:"varint,1,opt,name=offset,proto3" json:"offset,omitempty"`
+	// Raw output bytes produced during the build (not guaranteed to be valid UTF-8).
+	Data          []byte `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LogChunk) Reset() {
+	*x = LogChunk{}
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LogChunk) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LogChunk) ProtoMessage() {}
+
+func (x *LogChunk) ProtoReflect() protoreflect.Message {
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LogChunk.ProtoReflect.Descriptor instead.
+func (*LogChunk) Descriptor() ([]byte, []int) {
+	return file_bult_agent_v1_agent_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *LogChunk) GetOffset() int64 {
+	if x != nil {
+		return x.Offset
+	}
+	return 0
+}
+
+func (x *LogChunk) GetData() []byte {
+	if x != nil {
+		return x.Data
+	}
+	return nil
+}
+
+type WatchDeployResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Event:
+	//
+	//	*WatchDeployResponse_Log
+	//	*WatchDeployResponse_Deploy
+	Event         isWatchDeployResponse_Event `protobuf_oneof:"event"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchDeployResponse) Reset() {
+	*x = WatchDeployResponse{}
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchDeployResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchDeployResponse) ProtoMessage() {}
+
+func (x *WatchDeployResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_bult_agent_v1_agent_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchDeployResponse.ProtoReflect.Descriptor instead.
+func (*WatchDeployResponse) Descriptor() ([]byte, []int) {
+	return file_bult_agent_v1_agent_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *WatchDeployResponse) GetEvent() isWatchDeployResponse_Event {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+func (x *WatchDeployResponse) GetLog() *LogChunk {
+	if x != nil {
+		if x, ok := x.Event.(*WatchDeployResponse_Log); ok {
+			return x.Log
+		}
+	}
+	return nil
+}
+
+func (x *WatchDeployResponse) GetDeploy() *Deploy {
+	if x != nil {
+		if x, ok := x.Event.(*WatchDeployResponse_Deploy); ok {
+			return x.Deploy
+		}
+	}
+	return nil
+}
+
+type isWatchDeployResponse_Event interface {
+	isWatchDeployResponse_Event()
+}
+
+type WatchDeployResponse_Log struct {
+	Log *LogChunk `protobuf:"bytes,1,opt,name=log,proto3,oneof"`
+}
+
+type WatchDeployResponse_Deploy struct {
+	Deploy *Deploy `protobuf:"bytes,2,opt,name=deploy,proto3,oneof"`
+}
+
+func (*WatchDeployResponse_Log) isWatchDeployResponse_Event() {}
+
+func (*WatchDeployResponse_Deploy) isWatchDeployResponse_Event() {}
+
 var File_bult_agent_v1_agent_proto protoreflect.FileDescriptor
 
 const file_bult_agent_v1_agent_proto_rawDesc = "" +
@@ -1498,7 +1688,17 @@ const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\x13CancelDeployRequest\x12\x1b\n" +
 	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\"E\n" +
 	"\x14CancelDeployResponse\x12-\n" +
-	"\x06deploy\x18\x01 \x01(\v2\x15.bult.agent.v1.DeployR\x06deploy*b\n" +
+	"\x06deploy\x18\x01 \x01(\v2\x15.bult.agent.v1.DeployR\x06deploy\"I\n" +
+	"\x12WatchDeployRequest\x12\x1b\n" +
+	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x12\x16\n" +
+	"\x06offset\x18\x02 \x01(\x03R\x06offset\"6\n" +
+	"\bLogChunk\x12\x16\n" +
+	"\x06offset\x18\x01 \x01(\x03R\x06offset\x12\x12\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"|\n" +
+	"\x13WatchDeployResponse\x12+\n" +
+	"\x03log\x18\x01 \x01(\v2\x17.bult.agent.v1.LogChunkH\x00R\x03log\x12/\n" +
+	"\x06deploy\x18\x02 \x01(\v2\x15.bult.agent.v1.DeployH\x00R\x06deployB\a\n" +
+	"\x05event*b\n" +
 	"\fReplicaState\x12\x1d\n" +
 	"\x19REPLICA_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
 	"\x15REPLICA_STATE_RUNNING\x10\x01\x12\x18\n" +
@@ -1516,11 +1716,12 @@ const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\fStartReplica\x12\".bult.agent.v1.StartReplicaRequest\x1a#.bult.agent.v1.StartReplicaResponse\x12Z\n" +
 	"\rRemoveReplica\x12#.bult.agent.v1.RemoveReplicaRequest\x1a$.bult.agent.v1.RemoveReplicaResponse\x12W\n" +
 	"\fListReplicas\x12\".bult.agent.v1.ListReplicasRequest\x1a#.bult.agent.v1.ListReplicasResponse\x12A\n" +
-	"\x04Logs\x12\x1a.bult.agent.v1.LogsRequest\x1a\x1b.bult.agent.v1.LogsResponse0\x012\x8d\x02\n" +
+	"\x04Logs\x12\x1a.bult.agent.v1.LogsRequest\x1a\x1b.bult.agent.v1.LogsResponse0\x012\xe5\x02\n" +
 	"\fBuildService\x12T\n" +
 	"\vStartDeploy\x12!.bult.agent.v1.StartDeployRequest\x1a\".bult.agent.v1.StartDeployResponse\x12N\n" +
 	"\tGetDeploy\x12\x1f.bult.agent.v1.GetDeployRequest\x1a .bult.agent.v1.GetDeployResponse\x12W\n" +
-	"\fCancelDeploy\x12\".bult.agent.v1.CancelDeployRequest\x1a#.bult.agent.v1.CancelDeployResponseB<Z:github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1b\x06proto3"
+	"\fCancelDeploy\x12\".bult.agent.v1.CancelDeployRequest\x1a#.bult.agent.v1.CancelDeployResponse\x12V\n" +
+	"\vWatchDeploy\x12!.bult.agent.v1.WatchDeployRequest\x1a\".bult.agent.v1.WatchDeployResponse0\x01B<Z:github.com/thelol3882/bult/agent/gen/bult/agent/v1;agentv1b\x06proto3"
 
 var (
 	file_bult_agent_v1_agent_proto_rawDescOnce sync.Once
@@ -1535,7 +1736,7 @@ func file_bult_agent_v1_agent_proto_rawDescGZIP() []byte {
 }
 
 var file_bult_agent_v1_agent_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_bult_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_bult_agent_v1_agent_proto_msgTypes = make([]protoimpl.MessageInfo, 27)
 var file_bult_agent_v1_agent_proto_goTypes = []any{
 	(ReplicaState)(0),             // 0: bult.agent.v1.ReplicaState
 	(DeployState)(0),              // 1: bult.agent.v1.DeployState
@@ -1563,7 +1764,10 @@ var file_bult_agent_v1_agent_proto_goTypes = []any{
 	(*GetDeployResponse)(nil),     // 23: bult.agent.v1.GetDeployResponse
 	(*CancelDeployRequest)(nil),   // 24: bult.agent.v1.CancelDeployRequest
 	(*CancelDeployResponse)(nil),  // 25: bult.agent.v1.CancelDeployResponse
-	(*timestamppb.Timestamp)(nil), // 26: google.protobuf.Timestamp
+	(*WatchDeployRequest)(nil),    // 26: bult.agent.v1.WatchDeployRequest
+	(*LogChunk)(nil),              // 27: bult.agent.v1.LogChunk
+	(*WatchDeployResponse)(nil),   // 28: bult.agent.v1.WatchDeployResponse
+	(*timestamppb.Timestamp)(nil), // 29: google.protobuf.Timestamp
 }
 var file_bult_agent_v1_agent_proto_depIdxs = []int32{
 	6,  // 0: bult.agent.v1.RunReplicaRequest.image:type_name -> bult.agent.v1.ImageRef
@@ -1572,41 +1776,45 @@ var file_bult_agent_v1_agent_proto_depIdxs = []int32{
 	7,  // 3: bult.agent.v1.RunReplicaResponse.replica:type_name -> bult.agent.v1.Replica
 	0,  // 4: bult.agent.v1.Replica.state:type_name -> bult.agent.v1.ReplicaState
 	6,  // 5: bult.agent.v1.Replica.image:type_name -> bult.agent.v1.ImageRef
-	26, // 6: bult.agent.v1.Replica.started_at:type_name -> google.protobuf.Timestamp
+	29, // 6: bult.agent.v1.Replica.started_at:type_name -> google.protobuf.Timestamp
 	7,  // 7: bult.agent.v1.StopReplicaResponse.replica:type_name -> bult.agent.v1.Replica
 	7,  // 8: bult.agent.v1.StartReplicaResponse.replica:type_name -> bult.agent.v1.Replica
 	7,  // 9: bult.agent.v1.ListReplicasResponse.replicas:type_name -> bult.agent.v1.Replica
 	1,  // 10: bult.agent.v1.Deploy.state:type_name -> bult.agent.v1.DeployState
 	6,  // 11: bult.agent.v1.Deploy.image:type_name -> bult.agent.v1.ImageRef
-	26, // 12: bult.agent.v1.Deploy.started_at:type_name -> google.protobuf.Timestamp
-	26, // 13: bult.agent.v1.Deploy.finished_at:type_name -> google.protobuf.Timestamp
+	29, // 12: bult.agent.v1.Deploy.started_at:type_name -> google.protobuf.Timestamp
+	29, // 13: bult.agent.v1.Deploy.finished_at:type_name -> google.protobuf.Timestamp
 	18, // 14: bult.agent.v1.StartDeployRequest.source:type_name -> bult.agent.v1.Source
 	19, // 15: bult.agent.v1.StartDeployResponse.deploy:type_name -> bult.agent.v1.Deploy
 	19, // 16: bult.agent.v1.GetDeployResponse.deploy:type_name -> bult.agent.v1.Deploy
 	19, // 17: bult.agent.v1.CancelDeployResponse.deploy:type_name -> bult.agent.v1.Deploy
-	2,  // 18: bult.agent.v1.RuntimeService.RunReplica:input_type -> bult.agent.v1.RunReplicaRequest
-	8,  // 19: bult.agent.v1.RuntimeService.StopReplica:input_type -> bult.agent.v1.StopReplicaRequest
-	10, // 20: bult.agent.v1.RuntimeService.StartReplica:input_type -> bult.agent.v1.StartReplicaRequest
-	12, // 21: bult.agent.v1.RuntimeService.RemoveReplica:input_type -> bult.agent.v1.RemoveReplicaRequest
-	14, // 22: bult.agent.v1.RuntimeService.ListReplicas:input_type -> bult.agent.v1.ListReplicasRequest
-	16, // 23: bult.agent.v1.RuntimeService.Logs:input_type -> bult.agent.v1.LogsRequest
-	20, // 24: bult.agent.v1.BuildService.StartDeploy:input_type -> bult.agent.v1.StartDeployRequest
-	22, // 25: bult.agent.v1.BuildService.GetDeploy:input_type -> bult.agent.v1.GetDeployRequest
-	24, // 26: bult.agent.v1.BuildService.CancelDeploy:input_type -> bult.agent.v1.CancelDeployRequest
-	3,  // 27: bult.agent.v1.RuntimeService.RunReplica:output_type -> bult.agent.v1.RunReplicaResponse
-	9,  // 28: bult.agent.v1.RuntimeService.StopReplica:output_type -> bult.agent.v1.StopReplicaResponse
-	11, // 29: bult.agent.v1.RuntimeService.StartReplica:output_type -> bult.agent.v1.StartReplicaResponse
-	13, // 30: bult.agent.v1.RuntimeService.RemoveReplica:output_type -> bult.agent.v1.RemoveReplicaResponse
-	15, // 31: bult.agent.v1.RuntimeService.ListReplicas:output_type -> bult.agent.v1.ListReplicasResponse
-	17, // 32: bult.agent.v1.RuntimeService.Logs:output_type -> bult.agent.v1.LogsResponse
-	21, // 33: bult.agent.v1.BuildService.StartDeploy:output_type -> bult.agent.v1.StartDeployResponse
-	23, // 34: bult.agent.v1.BuildService.GetDeploy:output_type -> bult.agent.v1.GetDeployResponse
-	25, // 35: bult.agent.v1.BuildService.CancelDeploy:output_type -> bult.agent.v1.CancelDeployResponse
-	27, // [27:36] is the sub-list for method output_type
-	18, // [18:27] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	27, // 18: bult.agent.v1.WatchDeployResponse.log:type_name -> bult.agent.v1.LogChunk
+	19, // 19: bult.agent.v1.WatchDeployResponse.deploy:type_name -> bult.agent.v1.Deploy
+	2,  // 20: bult.agent.v1.RuntimeService.RunReplica:input_type -> bult.agent.v1.RunReplicaRequest
+	8,  // 21: bult.agent.v1.RuntimeService.StopReplica:input_type -> bult.agent.v1.StopReplicaRequest
+	10, // 22: bult.agent.v1.RuntimeService.StartReplica:input_type -> bult.agent.v1.StartReplicaRequest
+	12, // 23: bult.agent.v1.RuntimeService.RemoveReplica:input_type -> bult.agent.v1.RemoveReplicaRequest
+	14, // 24: bult.agent.v1.RuntimeService.ListReplicas:input_type -> bult.agent.v1.ListReplicasRequest
+	16, // 25: bult.agent.v1.RuntimeService.Logs:input_type -> bult.agent.v1.LogsRequest
+	20, // 26: bult.agent.v1.BuildService.StartDeploy:input_type -> bult.agent.v1.StartDeployRequest
+	22, // 27: bult.agent.v1.BuildService.GetDeploy:input_type -> bult.agent.v1.GetDeployRequest
+	24, // 28: bult.agent.v1.BuildService.CancelDeploy:input_type -> bult.agent.v1.CancelDeployRequest
+	26, // 29: bult.agent.v1.BuildService.WatchDeploy:input_type -> bult.agent.v1.WatchDeployRequest
+	3,  // 30: bult.agent.v1.RuntimeService.RunReplica:output_type -> bult.agent.v1.RunReplicaResponse
+	9,  // 31: bult.agent.v1.RuntimeService.StopReplica:output_type -> bult.agent.v1.StopReplicaResponse
+	11, // 32: bult.agent.v1.RuntimeService.StartReplica:output_type -> bult.agent.v1.StartReplicaResponse
+	13, // 33: bult.agent.v1.RuntimeService.RemoveReplica:output_type -> bult.agent.v1.RemoveReplicaResponse
+	15, // 34: bult.agent.v1.RuntimeService.ListReplicas:output_type -> bult.agent.v1.ListReplicasResponse
+	17, // 35: bult.agent.v1.RuntimeService.Logs:output_type -> bult.agent.v1.LogsResponse
+	21, // 36: bult.agent.v1.BuildService.StartDeploy:output_type -> bult.agent.v1.StartDeployResponse
+	23, // 37: bult.agent.v1.BuildService.GetDeploy:output_type -> bult.agent.v1.GetDeployResponse
+	25, // 38: bult.agent.v1.BuildService.CancelDeploy:output_type -> bult.agent.v1.CancelDeployResponse
+	28, // 39: bult.agent.v1.BuildService.WatchDeploy:output_type -> bult.agent.v1.WatchDeployResponse
+	30, // [30:40] is the sub-list for method output_type
+	20, // [20:30] is the sub-list for method input_type
+	20, // [20:20] is the sub-list for extension type_name
+	20, // [20:20] is the sub-list for extension extendee
+	0,  // [0:20] is the sub-list for field type_name
 }
 
 func init() { file_bult_agent_v1_agent_proto_init() }
@@ -1615,13 +1823,17 @@ func file_bult_agent_v1_agent_proto_init() {
 		return
 	}
 	file_bult_agent_v1_agent_proto_msgTypes[5].OneofWrappers = []any{}
+	file_bult_agent_v1_agent_proto_msgTypes[26].OneofWrappers = []any{
+		(*WatchDeployResponse_Log)(nil),
+		(*WatchDeployResponse_Deploy)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_bult_agent_v1_agent_proto_rawDesc), len(file_bult_agent_v1_agent_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   24,
+			NumMessages:   27,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

@@ -71,7 +71,7 @@ class RuntimeServiceServicer:
 
     def StartReplica(self, request, context):
         """StartReplica starts a previously stopped replica.
-        The host port may differ from before; callers must use the returned one.
+        The host port is stable across restarts.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -336,6 +336,11 @@ class BuildServiceStub:
                 request_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.SerializeToString,
                 response_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.FromString,
                 _registered_method=True)
+        self.WatchDeploy = channel.unary_stream(
+                '/bult.agent.v1.BuildService/WatchDeploy',
+                request_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployRequest.SerializeToString,
+                response_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployResponse.FromString,
+                _registered_method=True)
 
 
 class BuildServiceServicer:
@@ -369,6 +374,16 @@ class BuildServiceServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def WatchDeploy(self, request, context):
+        """WatchDeploy replays the build log from offset, follows it while the build runs,
+        and ALWAYS ends with one Deploy message in a terminal state and status OK;
+        an error status means the watch itself failed (NOT_FOUND, INVALID_ARGUMENT,
+        INTERNAL, CANCELLED).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_BuildServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -386,6 +401,11 @@ def add_BuildServiceServicer_to_server(servicer, server):
                     servicer.CancelDeploy,
                     request_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.FromString,
                     response_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.SerializeToString,
+            ),
+            'WatchDeploy': grpc.unary_stream_rpc_method_handler(
+                    servicer.WatchDeploy,
+                    request_deserializer=bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployRequest.FromString,
+                    response_serializer=bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -471,6 +491,33 @@ class BuildService:
             '/bult.agent.v1.BuildService/CancelDeploy',
             bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployRequest.SerializeToString,
             bult_dot_agent_dot_v1_dot_agent__pb2.CancelDeployResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def WatchDeploy(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_stream(
+            request,
+            target,
+            '/bult.agent.v1.BuildService/WatchDeploy',
+            bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployRequest.SerializeToString,
+            bult_dot_agent_dot_v1_dot_agent__pb2.WatchDeployResponse.FromString,
             options,
             channel_credentials,
             insecure,
