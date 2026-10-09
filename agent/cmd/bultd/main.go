@@ -34,6 +34,8 @@ type config struct {
 }
 
 func main() {
+	setupLogging()
+
 	var cfg config
 	flag.StringVar(&cfg.addr, "addr", ":50051", "address to listen on")
 	flag.IntVar(&cfg.portMin, "port-min", 20000, "lowest host port to allocate")
@@ -89,7 +91,10 @@ func run(cfg config) error {
 	}
 	defer dc.Close()
 
-	grpcServer := grpc.NewServer()
+	grpcServer := grpc.NewServer(
+		grpc.ChainUnaryInterceptor(server.LoggingUnaryInterceptor),
+		grpc.ChainStreamInterceptor(server.LoggingStreamInterceptor),
+	)
 
 	isRunner := cfg.role == "runner" || cfg.role == "both"
 	isBuilder := cfg.role == "builder" || cfg.role == "both"
@@ -165,4 +170,21 @@ func run(cfg config) error {
 
 	slog.Info("stopped")
 	return nil
+}
+
+// setupLogging makes slog the process logger. Under systemd the journal
+// already stamps every line with the time, so the handler drops its own;
+// run by hand (no journal) it keeps the time.
+func setupLogging() {
+	opts := &slog.HandlerOptions{}
+	// systemd sets JOURNAL_STREAM when stdout/stderr go to the journal.
+	if os.Getenv("JOURNAL_STREAM") != "" {
+		opts.ReplaceAttr = func(groups []string, a slog.Attr) slog.Attr {
+			if len(groups) == 0 && a.Key == slog.TimeKey {
+				return slog.Attr{} // an empty Attr is dropped from the output
+			}
+			return a
+		}
+	}
+	slog.SetDefault(slog.New(slog.NewTextHandler(os.Stdout, opts)))
 }

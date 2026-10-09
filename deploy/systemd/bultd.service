@@ -1,0 +1,32 @@
+# bultd — the bult node agent, as a systemd service.
+
+[Unit]
+Description=bult node agent
+After=network-online.target docker.service
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=simple
+User=bultd
+Group=bultd
+
+# Automatically manages /var/lib/bult with ownership set to bultd:bultd
+StateDirectory=bult
+
+# Leading '-' makes the environment file optional (ignored if missing)
+EnvironmentFile=-/etc/bult/bultd.env
+
+# Point git config / cache to the owned state directory
+Environment=HOME=/var/lib/bult
+
+# Unbraced $BULTD_ARGS allows word-splitting into individual flags
+ExecStart=/usr/local/bin/bultd $BULTD_ARGS
+
+Restart=on-failure
+RestartSec=5s
+
+TimeoutStopSec=30s
+
+[Install]
+WantedBy=multi-user.target
