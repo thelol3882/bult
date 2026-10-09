@@ -119,11 +119,12 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 	jobCtx, cancel := context.WithCancelCause(m.baseCtx)
 
 	initialStatus := Status{
-		DeployID:  spec.DeployID,
-		AppID:     spec.AppID,
-		Source:    spec.Source,
-		State:     StateRunning,
-		StartedAt: time.Now(),
+		DeployID:   spec.DeployID,
+		AppID:      spec.AppID,
+		Source:     spec.Source,
+		State:      StateRunning,
+		StartedAt:  time.Now(),
+		Dockerfile: spec.Dockerfile,
 	}
 
 	m.mu.Lock()
