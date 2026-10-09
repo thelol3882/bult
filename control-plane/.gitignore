@@ -1,0 +1,27 @@
+# Bytecode.
+__pycache__/
+*.py[cod]
+
+# Virtualenv managed by uv.
+.venv/
+
+# Tool caches.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Coverage.
+.coverage
+.coverage.*
+htmlcov/
+
+# Local databases (e.g. SQLite used in quick tests); real data lives in Postgres.
+*.db
+*.sqlite3
+
+# Packaging artifacts.
+dist/
+build/
+*.egg-info/
+
+# NOTE: gen/ (protobuf/gRPC stubs) is committed on purpose; uv.lock is committed too.
