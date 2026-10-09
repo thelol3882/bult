@@ -1,0 +1,13 @@
+{
+  "name": "express-hello",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Demo app for the bult Express preset",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0"
+  }
+}
