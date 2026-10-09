@@ -157,12 +157,14 @@ class LogsResponse(_message.Message):
     def __init__(self, data: _Optional[bytes] = ...) -> None: ...
 
 class Source(_message.Message):
-    __slots__ = ("repo_url", "branch")
+    __slots__ = ("repo_url", "branch", "subdir")
     REPO_URL_FIELD_NUMBER: _ClassVar[int]
     BRANCH_FIELD_NUMBER: _ClassVar[int]
+    SUBDIR_FIELD_NUMBER: _ClassVar[int]
     repo_url: str
     branch: str
-    def __init__(self, repo_url: _Optional[str] = ..., branch: _Optional[str] = ...) -> None: ...
+    subdir: str
+    def __init__(self, repo_url: _Optional[str] = ..., branch: _Optional[str] = ..., subdir: _Optional[str] = ...) -> None: ...
 
 class Deploy(_message.Message):
     __slots__ = ("deploy_id", "app_id", "state", "commit_sha", "image", "error", "started_at", "finished_at")
@@ -185,14 +187,16 @@ class Deploy(_message.Message):
     def __init__(self, deploy_id: _Optional[str] = ..., app_id: _Optional[str] = ..., state: _Optional[_Union[DeployState, str]] = ..., commit_sha: _Optional[str] = ..., image: _Optional[_Union[ImageRef, _Mapping]] = ..., error: _Optional[str] = ..., started_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ..., finished_at: _Optional[_Union[datetime.datetime, _timestamp_pb2.Timestamp, _Mapping]] = ...) -> None: ...
 
 class StartDeployRequest(_message.Message):
-    __slots__ = ("deploy_id", "app_id", "source")
+    __slots__ = ("deploy_id", "app_id", "source", "dockerfile")
     DEPLOY_ID_FIELD_NUMBER: _ClassVar[int]
     APP_ID_FIELD_NUMBER: _ClassVar[int]
     SOURCE_FIELD_NUMBER: _ClassVar[int]
+    DOCKERFILE_FIELD_NUMBER: _ClassVar[int]
     deploy_id: str
     app_id: str
     source: Source
-    def __init__(self, deploy_id: _Optional[str] = ..., app_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ...) -> None: ...
+    dockerfile: str
+    def __init__(self, deploy_id: _Optional[str] = ..., app_id: _Optional[str] = ..., source: _Optional[_Union[Source, _Mapping]] = ..., dockerfile: _Optional[str] = ...) -> None: ...
 
 class StartDeployResponse(_message.Message):
     __slots__ = ("deploy",)

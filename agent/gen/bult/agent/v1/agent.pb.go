@@ -972,6 +972,7 @@ type Source struct {
 	RepoUrl string `protobuf:"bytes,1,opt,name=repo_url,json=repoUrl,proto3" json:"repo_url,omitempty"`
 	// Branch to clone and build from.
 	Branch        string `protobuf:"bytes,2,opt,name=branch,proto3" json:"branch,omitempty"`
+	Subdir        string `protobuf:"bytes,3,opt,name=subdir,proto3" json:"subdir,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1016,6 +1017,13 @@ func (x *Source) GetRepoUrl() string {
 func (x *Source) GetBranch() string {
 	if x != nil {
 		return x.Branch
+	}
+	return ""
+}
+
+func (x *Source) GetSubdir() string {
+	if x != nil {
+		return x.Subdir
 	}
 	return ""
 }
@@ -1128,10 +1136,21 @@ func (x *Deploy) GetFinishedAt() *timestamppb.Timestamp {
 }
 
 type StartDeployRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	DeployId      string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
-	AppId         string                 `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
-	Source        *Source                `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	DeployId string                 `protobuf:"bytes,1,opt,name=deploy_id,json=deployId,proto3" json:"deploy_id,omitempty"`
+	AppId    string                 `protobuf:"bytes,2,opt,name=app_id,json=appId,proto3" json:"app_id,omitempty"`
+	Source   *Source                `protobuf:"bytes,3,opt,name=source,proto3" json:"source,omitempty"`
+	// The Dockerfile content used to build the image.
+	//
+	// Precedence rule:
+	//   - Non-empty: Takes precedence and is used for the build, even if the
+	//     repository contains its own Dockerfile (written to `.bult/Dockerfile`
+	//     so the user's workspace file remains untouched).
+	//   - Empty: The repository's existing Dockerfile is used as the fallback.
+	//
+	// Note: This precedence decision is resolved entirely by the control plane;
+	// the agent simply executes the instructions provided without local rules.
+	Dockerfile    string `protobuf:"bytes,4,opt,name=dockerfile,proto3" json:"dockerfile,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1185,6 +1204,13 @@ func (x *StartDeployRequest) GetSource() *Source {
 		return x.Source
 	}
 	return nil
+}
+
+func (x *StartDeployRequest) GetDockerfile() string {
+	if x != nil {
+		return x.Dockerfile
+	}
+	return ""
 }
 
 type StartDeployResponse struct {
@@ -1659,10 +1685,11 @@ const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"tail_lines\x18\x03 \x01(\x05R\ttailLines\"\"\n" +
 	"\fLogsResponse\x12\x12\n" +
-	"\x04data\x18\x01 \x01(\fR\x04data\";\n" +
+	"\x04data\x18\x01 \x01(\fR\x04data\"S\n" +
 	"\x06Source\x12\x19\n" +
 	"\brepo_url\x18\x01 \x01(\tR\arepoUrl\x12\x16\n" +
-	"\x06branch\x18\x02 \x01(\tR\x06branch\"\xca\x02\n" +
+	"\x06branch\x18\x02 \x01(\tR\x06branch\x12\x16\n" +
+	"\x06subdir\x18\x03 \x01(\tR\x06subdir\"\xca\x02\n" +
 	"\x06Deploy\x12\x1b\n" +
 	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x12\x15\n" +
 	"\x06app_id\x18\x02 \x01(\tR\x05appId\x120\n" +
@@ -1674,11 +1701,14 @@ const file_bult_agent_v1_agent_proto_rawDesc = "" +
 	"\n" +
 	"started_at\x18\a \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12;\n" +
 	"\vfinished_at\x18\b \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"finishedAt\"w\n" +
+	"finishedAt\"\x97\x01\n" +
 	"\x12StartDeployRequest\x12\x1b\n" +
 	"\tdeploy_id\x18\x01 \x01(\tR\bdeployId\x12\x15\n" +
 	"\x06app_id\x18\x02 \x01(\tR\x05appId\x12-\n" +
-	"\x06source\x18\x03 \x01(\v2\x15.bult.agent.v1.SourceR\x06source\"D\n" +
+	"\x06source\x18\x03 \x01(\v2\x15.bult.agent.v1.SourceR\x06source\x12\x1e\n" +
+	"\n" +
+	"dockerfile\x18\x04 \x01(\tR\n" +
+	"dockerfile\"D\n" +
 	"\x13StartDeployResponse\x12-\n" +
 	"\x06deploy\x18\x01 \x01(\v2\x15.bult.agent.v1.DeployR\x06deploy\"/\n" +
 	"\x10GetDeployRequest\x12\x1b\n" +

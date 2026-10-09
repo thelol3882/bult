@@ -177,6 +177,7 @@ message Source {
   string repo_url = 1;
   // Branch to clone and build from.
   string branch = 2;
+  string subdir = 3;
 }
 
 // Deploy represents the current execution state of a build/deploy job on the agent.
@@ -201,6 +202,17 @@ message StartDeployRequest {
   string deploy_id = 1;
   string app_id = 2;
   Source source = 3;
+  // The Dockerfile content used to build the image.
+  //
+  // Precedence rule:
+  // - Non-empty: Takes precedence and is used for the build, even if the
+  //   repository contains its own Dockerfile (written to `.bult/Dockerfile`
+  //   so the user's workspace file remains untouched).
+  // - Empty: The repository's existing Dockerfile is used as the fallback.
+  //
+  // Note: This precedence decision is resolved entirely by the control plane;
+  // the agent simply executes the instructions provided without local rules.
+  string dockerfile = 4;
 }
 
 message StartDeployResponse {
