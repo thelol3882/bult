@@ -1,4 +1,8 @@
-# TODO: nginx ingress; include control-plane/compose.yaml.
+# Host-side stack. TODO: nginx ingress.
+
+include:
+  - control-plane/compose.yaml
+
 services:
   registry:
     image: registry:3
