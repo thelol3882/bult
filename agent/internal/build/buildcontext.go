@@ -27,6 +27,7 @@ func Context(dir string) (io.ReadCloser, error) {
 	}
 
 	patterns = append(patterns, alwaysExcluded...)
+	patterns = append(patterns, "!"+providedDockerfilePath)
 
 	r, err := archive.TarWithOptions(dir, &archive.TarOptions{
 		ExcludePatterns: patterns,

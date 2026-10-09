@@ -37,7 +37,9 @@ func (b *Builder) StartDeploy(ctx context.Context, req *agentv1.StartDeployReque
 		Source: build.Source{
 			RepoURL: req.GetSource().GetRepoUrl(),
 			Branch:  req.GetSource().GetBranch(),
+			Subdir:  req.GetSource().GetSubdir(),
 		},
+		Dockerfile: req.GetDockerfile(),
 	}
 
 	st, err := b.jobs.Start(ctx, spec)

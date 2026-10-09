@@ -31,7 +31,8 @@ func toStatus(op string, err error) error {
 		errors.Is(err, build.ErrInvalidBranch),
 		errors.Is(err, build.ErrInvalidDeployID),
 		errors.Is(err, build.ErrInvalidAppID),
-		errors.Is(err, build.ErrInvalidOffset):
+		errors.Is(err, build.ErrInvalidOffset),
+		errors.Is(err, build.ErrInvalidSubdir):
 		code = codes.InvalidArgument
 	case errors.Is(err, build.ErrDeployNotFound),
 		errors.Is(err, docker.ErrNotFound):

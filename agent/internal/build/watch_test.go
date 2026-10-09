@@ -345,6 +345,7 @@ func TestRecover(t *testing.T) {
 
 	fb := &fakeBuilder{}
 	m := NewManager(context.Background(), store, fb, "registry.test:5000")
+	shutdownOnCleanup(t, m)
 	m.clone = fakeClone
 
 	recoveredCount, err := m.Recover()

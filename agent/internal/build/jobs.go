@@ -33,9 +33,10 @@ var validAppIDRe = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
 
 // Spec is what StartDeploy asks for.
 type Spec struct {
-	DeployID string
-	AppID    string
-	Source   Source
+	DeployID   string
+	AppID      string
+	Source     Source
+	Dockerfile string
 }
 
 // imageBuilder is what a job needs from Docker. Declared here, by the consumer
@@ -99,7 +100,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 		st := j.status
 		m.mu.Unlock()
 
-		if st.AppID != spec.AppID || st.Source != spec.Source {
+		if !sameSpec(st, spec) {
 			return Status{}, fmt.Errorf("%w: deploy %s", ErrDeploySpecMismatch, spec.DeployID)
 		}
 		return st, nil
@@ -107,7 +108,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 	m.mu.Unlock()
 
 	if st, err := m.store.ReadStatus(spec.DeployID); err == nil {
-		if st.AppID != spec.AppID || st.Source != spec.Source {
+		if !sameSpec(st, spec) {
 			return Status{}, fmt.Errorf("%w: deploy %s", ErrDeploySpecMismatch, spec.DeployID)
 		}
 		return st, nil
@@ -129,7 +130,7 @@ func (m *Manager) Start(ctx context.Context, spec Spec) (Status, error) {
 	if j, exists := m.jobs[spec.DeployID]; exists {
 		m.mu.Unlock()
 		cancel(nil)
-		if j.status.AppID != spec.AppID || j.status.Source != spec.Source {
+		if !sameSpec(j.status, spec) {
 			return Status{}, fmt.Errorf("%w: deploy %s", ErrDeploySpecMismatch, spec.DeployID)
 		}
 		return j.status, nil
@@ -211,6 +212,7 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	}
 	src := j.status.Source
 	appID := j.status.AppID
+	dockerfileText := j.status.Dockerfile
 	jobCancel := j.cancel
 	m.mu.Unlock()
 
@@ -266,7 +268,20 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	finalCommitSHA = checkout.Commit
 	fmt.Fprintf(logFile, "commit %s\n", finalCommitSHA)
 
-	rc, err := Context(checkout.Dir)
+	contextDir, err := resolveSubdir(checkout.Dir, src.Subdir)
+	if err != nil {
+		buildErr = err
+		return
+	}
+
+	dockerfilePath, err := prepareDockerfile(contextDir, dockerfileText)
+	if err != nil {
+		buildErr = fmt.Errorf("prepare dockerfile: %w", err)
+		return
+	}
+	fmt.Fprintf(logFile, "dockerfile: %s\n", dockerfilePath)
+
+	rc, err := Context(contextDir)
 	if err != nil {
 		buildErr = fmt.Errorf("create build context: %w", err)
 		return
@@ -277,7 +292,8 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	tag := fmt.Sprintf("%s:%s", repository, deployID)
 
 	opts := docker.BuildOptions{
-		Tag: tag,
+		Dockerfile: dockerfilePath,
+		Tag:        tag,
 		Labels: map[string]string{
 			"org.opencontainers.image.revision": finalCommitSHA,
 			"org.opencontainers.image.source":   src.RepoURL,
@@ -301,6 +317,10 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	}
 }
 
+func sameSpec(st Status, spec Spec) bool {
+	return st.AppID == spec.AppID && st.Source == spec.Source && st.Dockerfile == spec.Dockerfile
+}
+
 // validateIDs checks deploy_id and app_id: both become part of filesystem
 // paths and Docker image names, so allow-list them.
 func validateIDs(spec Spec) error {
@@ -317,6 +337,14 @@ func validateIDs(spec Spec) error {
 func userError(err error) string {
 	if err == nil {
 		return ""
+	}
+
+	if errors.Is(err, errBadSubdir) {
+		return err.Error()
+	}
+
+	if errors.Is(err, errNoDockerfile) {
+		return "no Dockerfile in the repository and no preset selected; add a Dockerfile or choose a preset in the app settings"
 	}
 
 	if errors.Is(err, ErrInvalidRepoURL) || errors.Is(err, ErrInvalidBranch) {

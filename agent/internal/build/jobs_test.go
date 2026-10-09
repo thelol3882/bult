@@ -77,7 +77,22 @@ func newTestManager(t *testing.T, fb *fakeBuilder) *Manager {
 
 	m := NewManager(context.Background(), store, fb, "registry.test:5000")
 	m.clone = fakeClone
+	shutdownOnCleanup(t, m)
 	return m
+}
+
+// shutdownOnCleanup stops m's jobs when the test ends: their goroutines must
+// not outlive the test and write into an already removed t.TempDir().
+// Cleanups run in reverse order, so this runs before TempDir removal.
+func shutdownOnCleanup(t *testing.T, m *Manager) {
+	t.Helper()
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if err := m.Shutdown(ctx); err != nil {
+			t.Errorf("manager shutdown: %v", err)
+		}
+	})
 }
 
 func waitState(t *testing.T, m *Manager, id string) Status {
@@ -271,6 +286,7 @@ func TestGetAfterRestart(t *testing.T) {
 
 	fbA := &fakeBuilder{digest: "sha256:restart-test"}
 	mA := NewManager(context.Background(), storeA, fbA, "registry.test:5000")
+	shutdownOnCleanup(t, mA)
 	mA.clone = fakeClone
 
 	spec := Spec{

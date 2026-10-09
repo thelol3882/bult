@@ -31,6 +31,7 @@ type Status struct {
 	DeployID   string          `json:"deploy_id"`
 	AppID      string          `json:"app_id"`
 	Source     Source          `json:"source"`
+	Dockerfile string          `json:"dockerfile,omitempty"`
 	State      State           `json:"state"`
 	CommitSHA  string          `json:"commit_sha,omitempty"`
 	Image      docker.ImageRef `json:"image,omitzero"`

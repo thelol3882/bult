@@ -15,8 +15,9 @@ import (
 
 // BuildOptions are the parameters of one image build.
 type BuildOptions struct {
-	Tag    string            // full reference: registry/app:deploy_id
-	Labels map[string]string // provenance (OCI labels, bult.deploy_id)
+	Tag        string            // full reference: registry/app:deploy_id
+	Labels     map[string]string // provenance (OCI labels, bult.deploy_id)
+	Dockerfile string
 }
 
 // BuildImage builds an image from a tar build context and writes the build
@@ -27,6 +28,7 @@ func (c *Client) BuildImage(ctx context.Context, buildContext io.Reader, opts Bu
 		Labels:      opts.Labels,
 		Remove:      true,
 		ForceRemove: true,
+		Dockerfile:  opts.Dockerfile,
 	})
 	if err != nil {
 		return dockerErr("build image", err)
