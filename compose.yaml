@@ -1,9 +1,21 @@
-# Host-side stack. TODO: nginx ingress.
+# Host-side stack.
 
 include:
   - control-plane/compose.yaml
 
 services:
+  ingress:
+    image: nginx:1.28.0-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    # Whole directory, not single files: editors save via rename, a file mount would go stale.
+    command: ["nginx", "-c", "/etc/nginx/bult/nginx.conf", "-g", "daemon off;"]
+    volumes:
+      - ./deploy/nginx:/etc/nginx/bult:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   registry:
     image: registry:3
     restart: unless-stopped
