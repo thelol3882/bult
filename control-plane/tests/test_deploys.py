@@ -2,10 +2,12 @@
 
 import asyncio
 from contextlib import ExitStack
+from typing import Any
 
 import grpc
 import pytest
 from fastapi.testclient import TestClient
+from grpc.aio import AioRpcError
 
 from app.api.deps import get_agents
 from app.main import create_app
@@ -41,7 +43,7 @@ class FakeAgentClients:
     def __init__(
         self,
         start_error: grpc.aio.AioRpcError | None = None,
-        build_states: list[str] | None = None,
+        build_states: list[str | AioRpcError] | None = None,
         run_error: grpc.aio.AioRpcError | None = None,
         start_error_times: int | None = None,
     ) -> None:
@@ -50,9 +52,9 @@ class FakeAgentClients:
         self.build_states = build_states or ["RUNNING"]
         self.run_error = run_error
 
-        self.start_calls: list[dict] = []
+        self.start_calls: list[dict[str, Any]] = []
         self.get_calls = 0
-        self.run_calls: list[dict] = []
+        self.run_calls: list[dict[str, Any]] = []
 
     @property
     def runner_names(self) -> list[str]:
