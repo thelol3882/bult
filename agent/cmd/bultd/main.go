@@ -17,6 +17,7 @@ import (
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
 )
 
@@ -94,6 +95,14 @@ func run(cfg config) error {
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(server.LoggingUnaryInterceptor),
 		grpc.ChainStreamInterceptor(server.LoggingStreamInterceptor),
+		grpc.KeepaliveEnforcementPolicy(keepalive.EnforcementPolicy{
+			MinTime:             20 * time.Second,
+			PermitWithoutStream: true,
+		}),
+		grpc.KeepaliveParams(keepalive.ServerParameters{
+			Time:    60 * time.Second,
+			Timeout: 10 * time.Second,
+		}),
 	)
 
 	isRunner := cfg.role == "runner" || cfg.role == "both"
