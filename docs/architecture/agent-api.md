@@ -198,6 +198,8 @@ Rule: **every call from the control plane has a deadline**, and it is longer tha
 
 A deadline answers "how long to wait for the result"; keepalive answers "is the peer still alive".
 
+**Keepalive must be allowed by the server.** grpc-go's default `EnforcementPolicy` is `MinTime: 5m, PermitWithoutStream: false`: a client pinging more often (the control plane pings every 30 s, also with no call in flight) collects strikes and is dropped with `GOAWAY ENHANCE_YOUR_CALM "too_many_pings"` after ~90 s — an in-flight `RunReplica` would end as `UNAVAILABLE` while the replica still starts. The agent therefore sets `MinTime: 20s, PermitWithoutStream: true` (below the client interval) and its own server pings. Fixing it on the client (pinging every 5+ minutes) would delay dead-node detection by the same 5 minutes. Verified 2026-10-10: GOAWAY at 90 s before, channel `READY` for 3 min after.
+
 ## Costs and limitations
 
 - The agent is stateful: a job registry, files on disk, and their cleanup.

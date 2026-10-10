@@ -4,6 +4,8 @@ version = "0.1.0"
 requires-python = ">=3.13"
 dependencies = [
     "fastapi>=0.143.0",
+    "grpcio>=1.84.0",
+    "protobuf>=6.33.3",
     "uvicorn[standard]>=0.54.0",
 ]
 
@@ -16,5 +18,8 @@ dev = [
 [tool.pytest.ini_options]
 # Make the `app` package importable however pytest is started
 # (`uv run pytest` from control-plane/, from the repo root, or from an IDE).
-pythonpath = ["."]
+pythonpath = [".", "gen"]
 testpaths = ["tests"]
+
+[tool.basedpyright]
+extraPaths = ["gen"]

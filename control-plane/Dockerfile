@@ -16,6 +16,10 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --locked --no-install-project --no-dev --no-cache
 
 COPY app ./app
+COPY gen ./gen
+COPY presets ./presets
+
+ENV PYTHONPATH=/app/gen
 
 USER app
 
