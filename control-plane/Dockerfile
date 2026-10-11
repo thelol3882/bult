@@ -21,6 +21,8 @@ COPY presets ./presets
 
 ENV PYTHONPATH=/app/gen
 
+RUN mkdir -p /routes && chown app:app /routes
+
 USER app
 
 EXPOSE 8000

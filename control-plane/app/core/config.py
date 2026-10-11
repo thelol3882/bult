@@ -11,6 +11,7 @@ class Settings:
         str, str
     ]  # BULT_RUNNERS, e.g. "bult-node-1=192.168.252.6:50051,bult-node-2=…"
     trusted_proxy: str  # BULT_TRUSTED_PROXY
+    ingress_dir: str = "/routes"  # BULT_INGRESS_DIR (optional)
 
 
 def _parse_runners(raw: str) -> dict[str, str]:
@@ -52,4 +53,5 @@ def load_settings() -> Settings:
         builder_addr=os.environ["BULT_BUILDER"],
         runner_addrs=_parse_runners(os.environ["BULT_RUNNERS"]),
         trusted_proxy=os.environ["BULT_TRUSTED_PROXY"],
+        ingress_dir=os.environ.get("BULT_INGRESS_DIR", "/routes"),
     )

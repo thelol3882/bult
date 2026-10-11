@@ -1,10 +1,15 @@
 """Apps resource: create / list / get / delete."""
 
+import logging
+
 from fastapi import APIRouter, HTTPException, status
 
-from app.api.deps import AppStoreDep
+from app.api.deps import AppStoreDep, DeployStoreDep, RoutesDep, SettingsDep
 from app.schemas.app import AppCreate, AppOut
 from app.services.apps import AppNameTakenError, AppNotFoundError
+from app.services.nginx import RouteApplyError, running_routes
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/apps", tags=["apps"])
 
@@ -48,6 +53,9 @@ async def get_app(
 async def delete_app(
     name: str,
     store: AppStoreDep,
+    deploys: DeployStoreDep,
+    routes: RoutesDep,
+    settings: SettingsDep,
 ) -> None:
     try:
         store.delete(name)
@@ -56,3 +64,13 @@ async def delete_app(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"App '{name}' not found.",
         )
+
+    deploys.remove_app(name)
+
+    async with routes.lock:
+        desired = running_routes(deploys, settings.runner_addrs)
+        try:
+            gen = routes.apply(desired)
+            await routes.wait_applied(gen)
+        except (RouteApplyError, TimeoutError) as e:
+            logger.warning("delete %s: route update failed: %r", name, e)

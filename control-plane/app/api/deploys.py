@@ -9,7 +9,7 @@ from pathlib import Path
 import grpc
 from fastapi import APIRouter, HTTPException, Request, status
 
-from app.api.deps import AgentsDep, AppStoreDep, DeployStoreDep, SettingsDep
+from app.api.deps import AgentsDep, AppStoreDep, DeployStoreDep, RoutesDep, SettingsDep
 from app.schemas.deploy import DeployOut
 from app.services.apps import AppNotFoundError
 from app.services.deploy_runner import run_deploy
@@ -33,6 +33,7 @@ async def start_deploy(
     name: str,
     request: Request,
     apps: AppStoreDep,
+    routes: RoutesDep,
     deploys: DeployStoreDep,
     agents: AgentsDep,
     settings: SettingsDep,
@@ -76,7 +77,15 @@ async def start_deploy(
     deploy = deploys.add(Deploy(id=deploy_id, app_name=app.name))
 
     task = asyncio.create_task(
-        run_deploy(agents, deploys, deploy_id, app.name, settings.trusted_proxy)
+        run_deploy(
+            agents,
+            deploys,
+            routes,
+            settings.runner_addrs,
+            deploy_id,
+            app.name,
+            settings.trusted_proxy,
+        )
     )
     tasks: set[asyncio.Task] = request.app.state.deploy_tasks
     tasks.add(task)

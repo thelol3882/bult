@@ -68,3 +68,13 @@ class DeployStore:
         for name, value in changes.items():
             setattr(deploy, name, value)
         return deploy
+
+    def all(self) -> list[Deploy]:
+        """Every deploy of every app."""
+        return list(self._deploys.values())
+
+    def remove_app(self, app_name: str) -> None:
+        """Forget every deploy of an app (called when the app is deleted)."""
+        self._deploys = {
+            k: d for k, d in self._deploys.items() if d.app_name != app_name
+        }

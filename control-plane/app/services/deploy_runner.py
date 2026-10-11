@@ -12,6 +12,13 @@ import grpc
 
 from app.services.agent_client import Agents, DeployResult
 from app.services.deploys import DeployStore
+from app.services.nginx import (
+    Route,
+    RouteApplyError,
+    RouteWriter,
+    node_ip,
+    running_routes,
+)
 from app.services.scheduler import pick_runner
 
 logger = logging.getLogger(__name__)
@@ -37,6 +44,8 @@ _USER_MESSAGES = {
 async def run_deploy(
     agents: Agents,
     store: DeployStore,
+    routes: RouteWriter,
+    runner_addrs: dict[str, str],
     deploy_id: str,
     app_name: str,
     trusted_proxy: str,
@@ -84,6 +93,25 @@ async def run_deploy(
             cpu_millicores=DEFAULT_CPU_MILLICORES,
             memory_bytes=DEFAULT_MEMORY_BYTES,
         )
+
+        stage = "route"
+        this_route = Route(
+            app_name, node_ip(runner_addrs[replica.node]), replica.host_port
+        )
+        async with routes.lock:
+            desired = running_routes(store, runner_addrs, skip_app=app_name)
+            desired.append(this_route)
+            try:
+                gen = routes.apply(desired)
+                await routes.wait_applied(gen)
+            except (RouteApplyError, TimeoutError) as e:
+                logger.warning("deploy %s: route failed: %r", deploy_id, e)
+                store.update(
+                    deploy_id,
+                    status="failed",
+                    error="route failed: could not publish the app's address",
+                )
+                return
 
         store.update(
             deploy_id,

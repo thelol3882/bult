@@ -8,12 +8,14 @@ services:
   ingress:
     image: nginx:1.28.0-alpine
     restart: unless-stopped
+    init: true
     ports:
       - "80:80"
-    # Whole directory, not single files: editors save via rename, a file mount would go stale.
-    command: ["nginx", "-c", "/etc/nginx/bult/nginx.conf", "-g", "daemon off;"]
+    entrypoint: ["/bin/sh", "/etc/nginx/bult/entrypoint.sh"]
+    command: []
     volumes:
       - ./deploy/nginx:/etc/nginx/bult:ro
+      - ingress-routes:/routes
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -29,3 +31,4 @@ services:
 
 volumes:
   registry-data:
+  ingress-routes:

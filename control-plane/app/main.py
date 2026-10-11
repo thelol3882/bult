@@ -6,6 +6,7 @@ every call builds a fresh app — tests get their own app and their own state.
 
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 
@@ -15,6 +16,7 @@ from app.core.logging import setup_logging
 from app.services.agent_client import AgentClients
 from app.services.apps import AppStore
 from app.services.deploys import DeployStore
+from app.services.nginx import RouteWriter
 
 
 @asynccontextmanager
@@ -24,7 +26,7 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.agents = AgentClients(settings.builder_addr, settings.runner_addrs)
     app.state.deploy_tasks = set()
-
+    app.state.routes = RouteWriter(Path(settings.ingress_dir))
     yield
 
     tasks = app.state.deploy_tasks

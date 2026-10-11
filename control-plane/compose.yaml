@@ -17,10 +17,12 @@ services:
       BULT_BUILDER: "192.168.252.8:50051"
       BULT_RUNNERS: "bult-node-1=192.168.252.6:50051"
       BULT_TRUSTED_PROXY: "192.168.252.1"
+      BULT_INGRESS_DIR: "/routes"
     volumes:
       - ./app:/app/app
       - ./gen:/app/gen:ro
       - ./presets:/app/presets:ro
+      - ingress-routes:/routes
     depends_on:
       postgres:
         condition: service_healthy
@@ -43,3 +45,4 @@ services:
 
 volumes:
   postgres-data:
+  ingress-routes:

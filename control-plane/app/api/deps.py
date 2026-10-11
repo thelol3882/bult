@@ -8,6 +8,7 @@ from app.core.config import Settings
 from app.services.agent_client import AgentClients
 from app.services.apps import AppStore
 from app.services.deploys import DeployStore
+from app.services.nginx import RouteWriter
 
 
 def get_app_store(request: Request) -> AppStore:
@@ -30,7 +31,13 @@ def get_settings(request: Request) -> Settings:
     return request.app.state.settings
 
 
+def get_routes(request: Request) -> RouteWriter:
+    """The ingress route writer, created at startup (overridden in tests)."""
+    return request.app.state.routes
+
+
 AppStoreDep = Annotated[AppStore, Depends(get_app_store)]
 DeployStoreDep = Annotated[DeployStore, Depends(get_deploy_store)]
 AgentsDep = Annotated[AgentClients, Depends(get_agents)]
 SettingsDep = Annotated[Settings, Depends(get_settings)]
+RoutesDep = Annotated[RouteWriter, Depends(get_routes)]

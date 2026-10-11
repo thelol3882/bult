@@ -9,11 +9,13 @@ import pytest
 from fastapi.testclient import TestClient
 from grpc.aio import AioRpcError
 
-from app.api.deps import get_agents
+from app.api.deps import get_agents, get_routes
 from app.main import create_app
 from app.services.agent_client import DeployResult, ReplicaResult
 from app.services.deploy_runner import MAX_POLL_FAILURES, run_deploy
 from app.services.deploys import Deploy, DeployStore
+from app.services.nginx import Route
+from tests.conftest import RUNNERS, FakeRoutes
 
 COMMIT_SHA = "0123abc"
 IMAGE_REPOSITORY = "registry.local/blog"
@@ -102,7 +104,7 @@ class FakeAgentClients:
 
 
 @pytest.fixture
-def client_for(monkeypatch):
+def client_for(monkeypatch, tmp_path, routes: FakeRoutes):
     """client_for(fake) -> TestClient with the fake injected and app "blog" created.
 
     `with TestClient(...)`: the lifespan runs (settings, deploy_tasks) and one
@@ -112,12 +114,14 @@ def client_for(monkeypatch):
     monkeypatch.setenv("BULT_BUILDER", "builder:50051")
     monkeypatch.setenv("BULT_RUNNERS", "node-a=runner:50051")
     monkeypatch.setenv("BULT_TRUSTED_PROXY", TRUSTED_PROXY)
+    monkeypatch.setenv("BULT_INGRESS_DIR", str(tmp_path / "lifespan-routes"))
 
     stack = ExitStack()
 
     def _make(agents: FakeAgentClients) -> TestClient:
         app = create_app()
         app.dependency_overrides[get_agents] = lambda: agents
+        app.dependency_overrides[get_routes] = lambda: routes
         client = stack.enter_context(TestClient(app))
         response = client.post("/apps", json=APP_BODY)
         assert response.status_code == 201, response.text
@@ -212,11 +216,13 @@ def _store_with_deploy(deploy_id: str) -> DeployStore:
     return store
 
 
-def test_run_deploy_success():
+def test_run_deploy_success(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=["RUNNING", "SUCCEEDED"])
     store = _store_with_deploy("d1")
 
-    asyncio.run(run_deploy(agents, store, "d1", "blog", TRUSTED_PROXY, poll_interval=0))
+    asyncio.run(
+        run_deploy(agents, store, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+    )
 
     deploy = store.get("blog", "d1")
     assert deploy.status == "running"
@@ -232,12 +238,17 @@ def test_run_deploy_success():
     assert call["image_digest"] == IMAGE_DIGEST
     assert call["env"] == {"PORT": "8000", "FORWARDED_ALLOW_IPS": TRUSTED_PROXY}
 
+    # The route points at the node's IP (from RUNNERS), not at the node's name.
+    assert routes.applied[-1] == [Route("blog", "10.0.0.5", HOST_PORT)]
 
-def test_run_deploy_build_failed():
+
+def test_run_deploy_build_failed(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=["FAILED"])
     store = _store_with_deploy("d1")
 
-    asyncio.run(run_deploy(agents, store, "d1", "blog", TRUSTED_PROXY, poll_interval=0))
+    asyncio.run(
+        run_deploy(agents, store, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+    )
 
     deploy = store.get("blog", "d1")
     assert deploy.status == "failed"
@@ -245,7 +256,7 @@ def test_run_deploy_build_failed():
     assert agents.run_calls == []
 
 
-def test_run_deploy_run_replica_unavailable():
+def test_run_deploy_run_replica_unavailable(routes: FakeRoutes):
     details = "dial tcp 192.168.252.6:50051: connection refused"
     agents = FakeAgentClients(
         build_states=["SUCCEEDED"],
@@ -253,7 +264,9 @@ def test_run_deploy_run_replica_unavailable():
     )
     store = _store_with_deploy("d1")
 
-    asyncio.run(run_deploy(agents, store, "d1", "blog", TRUSTED_PROXY, poll_interval=0))
+    asyncio.run(
+        run_deploy(agents, store, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+    )
 
     deploy = store.get("blog", "d1")
     assert deploy.status == "failed"
@@ -261,23 +274,27 @@ def test_run_deploy_run_replica_unavailable():
     assert "192.168" not in deploy.error
 
 
-def test_run_deploy_poll_survives_transient_unavailable():
+def test_run_deploy_poll_survives_transient_unavailable(routes: FakeRoutes):
     agents = FakeAgentClients(
         build_states=["RUNNING", rpc_error(grpc.StatusCode.UNAVAILABLE), "SUCCEEDED"]
     )
     store = _store_with_deploy("d1")
 
-    asyncio.run(run_deploy(agents, store, "d1", "blog", TRUSTED_PROXY, poll_interval=0))
+    asyncio.run(
+        run_deploy(agents, store, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+    )
 
     assert store.get("blog", "d1").status == "running"
     assert agents.get_calls == 3
 
 
-def test_run_deploy_poll_gives_up_after_repeated_unavailable():
+def test_run_deploy_poll_gives_up_after_repeated_unavailable(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=[rpc_error(grpc.StatusCode.UNAVAILABLE)])
     store = _store_with_deploy("d1")
 
-    asyncio.run(run_deploy(agents, store, "d1", "blog", TRUSTED_PROXY, poll_interval=0))
+    asyncio.run(
+        run_deploy(agents, store, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+    )
 
     deploy = store.get("blog", "d1")
     assert deploy.status == "failed"
