@@ -1,0 +1,6 @@
+.next
+node_modules
+coverage
+design-system
+pnpm-lock.yaml
+public

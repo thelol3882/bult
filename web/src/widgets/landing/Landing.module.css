@@ -1,0 +1,540 @@
+/* Ported from design-system/specimen.html. CSS-only intro, plays once on load. */
+.hero {
+    --text-primary: var(--slate-9);
+    position: relative;
+    height: 900px;
+    overflow: hidden;
+    background: #1f8fd0;
+}
+
+.inner {
+    position: relative;
+    max-width: 1440px;
+    height: 100%;
+    margin: 0 auto;
+}
+
+.sky {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    overflow: hidden;
+}
+
+.photo {
+    object-fit: cover;
+    object-position: 50% 100%;
+    transform-origin: 50% 100%;
+    animation: skydrift 80s ease-in-out infinite alternate;
+    will-change: transform;
+}
+
+@keyframes skydrift {
+    from {
+        transform: scale(1.04) translateX(-6px);
+    }
+    to {
+        transform: scale(1.06) translateX(6px);
+    }
+}
+
+/* Brand grade: pulls the navy top toward flag blue and hazes the horizon. */
+.sky::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background:
+        linear-gradient(180deg, rgba(255, 255, 255, 0) 82%, rgba(244, 252, 254, 0.9) 100%),
+        linear-gradient(
+            180deg,
+            rgba(0, 175, 202, 0.74) 0%,
+            rgba(10, 180, 206, 0.66) 30%,
+            rgba(60, 198, 220, 0.4) 58%,
+            rgba(120, 215, 235, 0) 80%
+        );
+}
+
+.glow {
+    position: absolute;
+    top: -380px;
+    right: -260px;
+    z-index: 1;
+    width: 1100px;
+    height: 1100px;
+    border-radius: 50%;
+    pointer-events: none;
+    background: radial-gradient(
+        circle,
+        rgba(255, 244, 214, 0.85) 0%,
+        rgba(255, 232, 176, 0.38) 22%,
+        rgba(255, 226, 170, 0.1) 40%,
+        rgba(255, 226, 170, 0) 55%
+    );
+}
+
+/* nav */
+.nav {
+    position: absolute;
+    inset: 0 0 auto;
+    z-index: 5;
+    display: flex;
+    align-items: center;
+    height: 84px;
+    padding: 0 96px;
+}
+
+.brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--slate-9);
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    text-decoration: none;
+}
+
+.brand small {
+    margin-left: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.5);
+    color: var(--slate-7);
+    font-family: var(--font-sans), sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0;
+}
+
+.navRight {
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    margin-left: auto;
+    font-weight: 500;
+}
+
+.navRight a {
+    color: var(--slate-9);
+    text-decoration: none;
+}
+
+.navRight a:hover {
+    text-decoration: underline;
+    text-underline-offset: 4px;
+}
+
+/* copy */
+.copy {
+    position: absolute;
+    top: 200px;
+    left: 96px;
+    z-index: 4;
+    width: 700px;
+}
+
+.copy h1 {
+    margin: 0;
+    color: var(--slate-9);
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-variation-settings: 'opsz' 96;
+    font-size: 96px;
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    line-height: 0.98;
+}
+
+.line {
+    display: block;
+    margin-bottom: -0.06em;
+    padding-bottom: 0.06em;
+    overflow: hidden;
+}
+
+.line > span {
+    display: block;
+    transform: translateY(105%);
+    animation: rise var(--duration-reveal) var(--ease-out) both;
+    animation-delay: calc(var(--i) * 90ms);
+}
+
+.cta {
+    display: flex;
+    gap: 12px;
+    margin-top: 40px;
+    opacity: 0;
+    transform: translateY(12px);
+    animation: up 700ms var(--ease-out) 400ms both;
+}
+
+.btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    height: 52px;
+    padding: 0 24px;
+    border-radius: var(--radius-full);
+    color: var(--slate-9);
+    font-size: 16px;
+    font-weight: 600;
+    text-decoration: none;
+    transition:
+        background var(--duration-fast) var(--ease-standard),
+        transform var(--duration-fast) var(--ease-standard);
+}
+
+.btnSun {
+    background: var(--sun-5);
+    box-shadow:
+        0 10px 24px -8px rgba(176, 131, 0, 0.55),
+        inset 0 -2px 0 rgba(0, 0, 0, 0.08);
+}
+
+.btnSun:hover {
+    background: var(--sun-4);
+    transform: translateY(-1px);
+}
+
+.btnGlass {
+    background: rgba(255, 255, 255, 0.6);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(8px);
+}
+
+.btnGlass:hover {
+    background: rgba(255, 255, 255, 0.85);
+}
+
+/* terminal + flight */
+.term {
+    position: absolute;
+    top: 300px;
+    left: 818px;
+    z-index: 3;
+    width: 520px;
+    overflow: hidden;
+    border-radius: var(--radius-xl);
+    background: var(--night-8);
+    box-shadow:
+        var(--shadow-cloud),
+        0 0 0 1px rgba(255, 255, 255, 0.08) inset;
+    color: #e6eef4;
+    opacity: 0;
+    transform: translateY(24px);
+    animation: up 800ms var(--ease-out) 450ms both;
+}
+
+.termBar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    height: 40px;
+    padding: 0 16px;
+    border-bottom: 1px solid var(--night-6);
+    color: var(--night-1);
+    font-size: 12px;
+}
+
+.termBar i {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--night-5);
+}
+
+.termBar span {
+    margin-left: 8px;
+    font-family: var(--font-mono), monospace;
+}
+
+.termBody {
+    padding: 16px 20px 20px;
+    font-family: var(--font-mono), monospace;
+    font-size: 13.5px;
+    line-height: 1.85;
+}
+
+.l2,
+.l3 {
+    opacity: 0;
+}
+
+.l2 {
+    animation: show 1ms linear 1450ms both;
+}
+
+.l3 {
+    animation: show 1ms linear 3500ms both;
+}
+
+.prompt {
+    color: var(--sun-4);
+}
+
+.dim {
+    color: var(--night-1);
+}
+
+.ok {
+    color: #6ee0b0;
+}
+
+.url {
+    color: var(--sky-3);
+}
+
+.route {
+    position: absolute;
+    top: 460px;
+    left: 860px;
+    z-index: 2;
+    pointer-events: none;
+    opacity: 0;
+    animation: routeIn 600ms var(--ease-standard) 1600ms both;
+}
+
+.flight {
+    position: absolute;
+    top: 452px;
+    left: 880px;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.packetX {
+    position: absolute;
+    top: 0;
+    left: 0;
+    opacity: 0;
+    animation:
+        px 1300ms cubic-bezier(0.45, 0, 0.75, 1) 1750ms both,
+        fadeOut 300ms linear 2800ms both;
+}
+
+.packetY {
+    animation: py 1300ms cubic-bezier(0.15, 0.7, 0.3, 1) 1750ms both;
+}
+
+.packet {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 10px 5px 8px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: var(--shadow-md);
+    color: var(--slate-8);
+    font-family: var(--font-mono), monospace;
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.packet i {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--sun-5);
+    box-shadow: 0 0 0 3px rgba(254, 197, 12, 0.3);
+}
+
+.livepill {
+    position: absolute;
+    top: 652px;
+    left: 930px;
+    z-index: 4;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px 10px 12px;
+    border-radius: 999px;
+    background: #fff;
+    box-shadow: var(--shadow-cloud);
+    color: var(--slate-9);
+    font-size: 15px;
+    font-weight: 500;
+    opacity: 0;
+    transform: translateY(34px) scale(0.92);
+    animation: drop 900ms var(--ease-out) 3200ms both;
+}
+
+.liveDot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--green-5);
+    box-shadow: 0 0 0 4px rgba(47, 176, 127, 0.2);
+}
+
+.liveUrl {
+    color: var(--sky-8);
+    font-family: var(--font-mono), monospace;
+    font-size: 14px;
+}
+
+.livepill small {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--green-0);
+    color: var(--green-7);
+    font-size: 12px;
+    font-weight: 600;
+}
+
+@keyframes rise {
+    to {
+        transform: translateY(0);
+    }
+}
+
+@keyframes up {
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes show {
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes routeIn {
+    to {
+        opacity: 0.7;
+    }
+}
+
+@keyframes px {
+    0% {
+        opacity: 1;
+        transform: translateX(0);
+    }
+    100% {
+        opacity: 1;
+        transform: translateX(150px);
+    }
+}
+
+@keyframes py {
+    to {
+        transform: translateY(236px);
+    }
+}
+
+@keyframes fadeOut {
+    0% {
+        opacity: 1;
+    }
+    100% {
+        opacity: 0;
+    }
+}
+
+@keyframes drop {
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* how it works */
+.how {
+    padding: 72px 96px 96px;
+    background: linear-gradient(180deg, #f4fcfe 0%, #fff 140px);
+}
+
+.steps {
+    position: relative;
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+    max-width: 1248px;
+    margin: 0 auto;
+    padding: 0;
+    list-style: none;
+}
+
+.steps::before {
+    content: '';
+    position: absolute;
+    top: 27px;
+    right: 28px;
+    left: 28px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--sky-2), var(--sky-4) 60%, var(--sun-5));
+}
+
+.step {
+    position: relative;
+}
+
+.stepN {
+    position: relative;
+    display: grid;
+    width: 56px;
+    height: 56px;
+    place-items: center;
+    border: 2px solid var(--sky-4);
+    border-radius: 50%;
+    background: #fff;
+    color: var(--sky-8);
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+}
+
+.step:last-child .stepN {
+    border-color: var(--sun-5);
+    background: var(--sun-5);
+    color: var(--slate-9);
+}
+
+.step h3 {
+    margin: 24px 0 0;
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 32px;
+    font-weight: 650;
+    letter-spacing: -0.025em;
+}
+
+.step p {
+    margin: 8px 0 0;
+    color: var(--slate-6);
+    font-size: 16px;
+}
+
+.credit {
+    max-width: 1248px;
+    margin: 56px auto 0;
+    color: var(--slate-6);
+    font-size: 12px;
+}
+
+.credit a {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+
+/* reduced motion: static, everything in its final state */
+@media (prefers-reduced-motion: reduce) {
+    .line > span,
+    .cta,
+    .term,
+    .l2,
+    .l3,
+    .livepill {
+        opacity: 1;
+        transform: none;
+    }
+
+    .route {
+        opacity: 0.7;
+    }
+
+    .packetX {
+        opacity: 0;
+    }
+}

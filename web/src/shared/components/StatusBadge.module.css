@@ -1,0 +1,16 @@
+.dot {
+    display: block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+}
+
+.pulse {
+    animation: pulse 1.4s var(--ease-float) infinite;
+}
+
+@keyframes pulse {
+    50% {
+        opacity: 0.35;
+    }
+}

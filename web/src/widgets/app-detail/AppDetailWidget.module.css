@@ -1,0 +1,24 @@
+.grid {
+    display: grid;
+    grid-template-columns: 440px 1fr;
+    gap: 20px;
+    align-items: start;
+}
+
+.center {
+    display: grid;
+    place-items: center;
+    padding: 64px;
+}
+
+.link {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--sky-7);
+}
+
+.link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}

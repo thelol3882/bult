@@ -1,0 +1,252 @@
+/* ==========================================================================
+   bult design tokens (draft v0.1)
+   Concept: bult = "cloud" in Kazakh. Sky + clouds + warm gold light, Kazakhstan flag palette.
+   - :root               -> light dashboard (default)
+   - .bult-sky           -> landing hero / marketing surfaces (bright sky)
+   - .bult-night         -> dark surfaces: log viewer, footer, code blocks
+   Fonts (Google Fonts):
+     Bricolage Grotesque (display), Onest (UI), JetBrains Mono (logs, IDs, digests)
+   ========================================================================== */
+
+:root {
+    /* ---------- Color scales (10 shades, index 5 = brand anchor) ---------- */
+    /* Sky: flag blue #00AFCA is --sky-5. Not a text color on white (2.6:1). */
+    --sky-0: #e8f9fc;
+    --sky-1: #c7f0f7;
+    --sky-2: #97e3ef;
+    --sky-3: #5fd3e4;
+    --sky-4: #26c1d8;
+    --sky-5: #00afca; /* flag blue: fills with navy text, focus rings, illustration */
+    --sky-6: #0094ad; /* hover for sky-5 fills */
+    --sky-7: #00788d; /* links / text accent on white: 5.2:1 */
+    --sky-8: #005d6e;
+    --sky-9: #003f4c;
+
+    /* Sun: flag gold #FEC50C is --sun-5. Never text on white (1.6:1). */
+    --sun-0: #fffae6;
+    --sun-1: #fff1bf;
+    --sun-2: #ffe58a;
+    --sun-3: #ffd950;
+    --sun-4: #fecd26;
+    --sun-5: #fec50c; /* flag gold: sun, highlights, "building" dot, CTA on night */
+    --sun-6: #e0a800;
+    --sun-7: #b08300;
+    --sun-8: #8a6500; /* gold-family TEXT on white / sun-0: 5.1-5.3:1 */
+    --sun-9: #5e4500;
+
+    /* Slate: cool neutral, tinted toward the sky */
+    --slate-0: #f5f8fa;
+    --slate-1: #edf2f5;
+    --slate-2: #e2e8ee;
+    --slate-3: #cbd5dd;
+    --slate-4: #a3b1be;
+    --slate-5: #7a8b9b; /* placeholder / disabled only: 3.5:1 */
+    --slate-6: #5b6b7b; /* secondary text: 5.5:1 on white */
+    --slate-7: #3f4e5c;
+    --slate-8: #26333f;
+    --slate-9: #0b1622; /* primary text / "ink": 18:1 on white */
+
+    /* Night: deep sky after sunset. Dark surfaces only. */
+    --night-0: #c9d6e0;
+    --night-1: #9fb3c4;
+    --night-2: #6e879c;
+    --night-3: #4a6378;
+    --night-4: #2e4659;
+    --night-5: #1d3447;
+    --night-6: #132838;
+    --night-7: #0e2030;
+    --night-8: #0a1826;
+    --night-9: #061220;
+
+    /* Semantic */
+    --green-0: #e7f6ef;
+    --green-5: #2fb07f;
+    --green-7: #0f7a55; /* 5.3:1 on white, 4.8:1 on green-0 */
+    --red-0: #fff0f1;
+    --red-5: #e5485b;
+    --red-7: #c4283c; /* 5.7:1 on white, 5.1:1 on red-0 */
+
+    --color-success: var(--green-7);
+    --color-success-bg: var(--green-0);
+    --color-warning: var(--sun-8);
+    --color-warning-bg: var(--sun-0);
+    --color-danger: var(--red-7);
+    --color-danger-bg: var(--red-0);
+    --color-info: var(--sky-7);
+    --color-info-bg: var(--sky-0);
+
+    /* Deploy status (badge text / bg / dot) */
+    --status-building-fg: var(--sun-8);
+    --status-building-bg: var(--sun-0);
+    --status-building-dot: var(--sun-5);
+    --status-starting-fg: var(--sky-8);
+    --status-starting-bg: var(--sky-0);
+    --status-starting-dot: var(--sky-5);
+    --status-running-fg: var(--green-7);
+    --status-running-bg: var(--green-0);
+    --status-running-dot: var(--green-5);
+    --status-failed-fg: var(--red-7);
+    --status-failed-bg: var(--red-0);
+    --status-failed-dot: var(--red-5);
+    --status-stopped-fg: var(--slate-6);
+    --status-stopped-bg: var(--slate-1);
+    --status-stopped-dot: var(--slate-4);
+
+    /* ---------- Dashboard surfaces (light, default) ---------- */
+    --surface-page: var(--slate-0);
+    --surface-raised: #ffffff; /* cards, table, inputs */
+    --surface-sunken: var(--slate-1);
+    --surface-hover: #f0f6f9;
+    --surface-selected: var(--sky-0);
+    --surface-inverse: var(--night-8);
+
+    --text-primary: var(--slate-9);
+    --text-secondary: var(--slate-6);
+    --text-muted: var(--slate-5); /* non-essential only */
+    --text-link: var(--sky-7);
+    --text-on-brand: var(--slate-9); /* navy on flag blue: 6.9:1 */
+    --text-on-sun: var(--slate-9); /* navy on gold: 11.5:1 */
+    --text-on-inverse: #e6eef4;
+
+    --border-subtle: var(--slate-2);
+    --border-default: var(--slate-3);
+    --border-strong: var(--slate-4);
+    --border-focus: var(--sky-5);
+
+    --focus-ring: 0 0 0 3px rgba(0, 175, 202, 0.35);
+
+    /* ---------- Radius ---------- */
+    /* One family: soft but not bubbly. Clouds are round; UI is calm. */
+    --radius-xs: 4px;
+    --radius-sm: 6px; /* badges, inputs, small buttons */
+    --radius-md: 8px; /* buttons, inputs (default) */
+    --radius-lg: 12px; /* cards, panels */
+    --radius-xl: 20px; /* landing cards, hero terminal */
+    --radius-full: 999px;
+
+    /* ---------- Spacing (4px base) ---------- */
+    --space-0: 0;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 20px;
+    --space-6: 24px;
+    --space-8: 32px;
+    --space-10: 40px;
+    --space-12: 48px;
+    --space-16: 64px;
+    --space-20: 80px;
+    --space-24: 96px;
+    --space-32: 128px;
+
+    /* ---------- Shadows (cool, sky-tinted; light) ---------- */
+    --shadow-xs: 0 1px 2px rgba(11, 22, 34, 0.06);
+    --shadow-sm: 0 1px 2px rgba(11, 22, 34, 0.05), 0 2px 6px rgba(11, 22, 34, 0.05);
+    --shadow-md: 0 2px 4px rgba(11, 22, 34, 0.04), 0 8px 24px rgba(11, 40, 60, 0.08);
+    --shadow-lg: 0 4px 8px rgba(11, 22, 34, 0.04), 0 20px 48px rgba(11, 40, 60, 0.14);
+    --shadow-cloud: 0 24px 60px -12px rgba(0, 93, 110, 0.28); /* landing floating cards */
+
+    /* ---------- Typography ---------- */
+    /* --font-display / --font-sans / --font-mono are set by next/font on <html> */
+
+    /* Landing (display) */
+    --text-hero: clamp(3.5rem, 7vw, 6.5rem); /* 104px at 1440 */
+    --text-display: clamp(2.5rem, 4.5vw, 4rem);
+    --leading-hero: 0.95;
+    --tracking-hero: -0.035em;
+    --text-lead: 1.25rem;
+
+    /* Dashboard (UI) */
+    --text-xs: 0.75rem; /* 12 meta, badge */
+    --text-sm: 0.8125rem; /* 13 table, secondary */
+    --text-md: 0.875rem; /* 14 body default */
+    --text-lg: 1rem; /* 16 */
+    --text-xl: 1.25rem; /* 20 section title */
+    --text-2xl: 1.5rem; /* 24 page title */
+    --text-3xl: 2rem; /* 32 */
+    --leading-tight: 1.2;
+    --leading-normal: 1.5;
+    --leading-mono: 1.65;
+    --weight-regular: 400;
+    --weight-medium: 500;
+    --weight-semibold: 600;
+    --weight-bold: 700;
+
+    /* ---------- Motion ---------- */
+    --duration-instant: 80ms;
+    --duration-fast: 120ms; /* hover, press */
+    --duration-base: 180ms; /* state change: badge, input error, toast in */
+    --duration-slow: 320ms; /* panels, drawers */
+    --duration-reveal: 900ms; /* landing hero entrance */
+    --duration-drift-near: 70s; /* landing cloud layers (one loop) */
+    --duration-drift-mid: 110s;
+    --duration-drift-far: 170s;
+
+    --ease-standard: cubic-bezier(0.2, 0, 0, 1); /* UI default */
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1); /* entrances: lands softly */
+    --ease-in: cubic-bezier(0.4, 0, 1, 1); /* exits */
+    --ease-float: cubic-bezier(0.45, 0, 0.55, 1); /* sine-ish, for drift/bob */
+
+    /* ---------- Layout ---------- */
+    --sidebar-width: 240px;
+    --topbar-height: 56px;
+    --content-max: 1200px;
+}
+
+/* Landing / marketing: bright daytime sky. */
+.bult-sky {
+    --sky-top: #0796b6;
+    --sky-mid: #3cc6dc;
+    --sky-low: #a9e8f2;
+    --sky-horizon: #eefbfd;
+    --sky-gradient: linear-gradient(
+        180deg,
+        var(--sky-top) 0%,
+        var(--sky-mid) 38%,
+        var(--sky-low) 72%,
+        var(--sky-horizon) 100%
+    );
+    --sun-glow: radial-gradient(
+        circle,
+        rgba(254, 197, 12, 0.55) 0%,
+        rgba(254, 197, 12, 0.18) 35%,
+        rgba(254, 197, 12, 0) 70%
+    );
+    --cloud-fill: #ffffff;
+    --cloud-shade: #dff4f9;
+    --text-primary: var(--slate-9); /* navy headline: 6.9:1 on sky-5, 15:1 on sky-1 */
+    --text-secondary: var(--slate-8);
+    --surface-glass: rgba(255, 255, 255, 0.72);
+    --border-glass: rgba(255, 255, 255, 0.85);
+}
+
+/* Dark surfaces: log viewer, terminal card, footer, night variant of landing. */
+.bult-night {
+    --surface-page: var(--night-9);
+    --surface-raised: var(--night-8);
+    --surface-sunken: #050e19;
+    --surface-hover: var(--night-6);
+    --text-primary: #e6eef4; /* 15:1 on night-8 */
+    --text-secondary: #b9c7d3; /* 10.4:1 on night-8 */
+    --text-muted: var(--night-2);
+    --text-link: var(--sky-3);
+    --border-subtle: var(--night-6);
+    --border-default: var(--night-5);
+    --log-info: #b9c7d3;
+    --log-step: var(--sky-3);
+    --log-warn: var(--sun-4);
+    --log-error: #ff8a97;
+    --log-success: #6ee0b0;
+    --log-time: var(--night-2);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    :root {
+        --duration-instant: 0ms;
+        --duration-fast: 0ms;
+        --duration-base: 0ms;
+        --duration-slow: 0ms;
+        --duration-reveal: 0ms;
+    }
+}

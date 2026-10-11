@@ -1,0 +1,21 @@
+.root {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-width: 0;
+    max-width: 100%;
+}
+
+.text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.chip {
+    padding: 2px 6px;
+    border-radius: var(--radius-xs);
+    background: var(--slate-1);
+    color: var(--slate-8);
+    font-size: 12px;
+}

@@ -1,0 +1,1 @@
+export { AppDetailWidget } from './AppDetailWidget';

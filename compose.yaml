@@ -2,6 +2,7 @@
 
 include:
   - control-plane/compose.yaml
+  - web/compose.yaml
 
 services:
   ingress:

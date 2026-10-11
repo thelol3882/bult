@@ -1,0 +1,608 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>bult design system</title>
+<link rel="preload" as="image" href="assets/sky-hero.jpg" fetchpriority="high">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400..800&family=JetBrains+Mono:wght@400;500&family=Onest:wght@400..700&display=swap" rel="stylesheet">
+<style>
+/* ===== tokens (copy of tokens.css, inlined so the page is self-contained) ===== */
+:root{
+  --sky-0:#e8f9fc;--sky-1:#c7f0f7;--sky-2:#97e3ef;--sky-3:#5fd3e4;--sky-4:#26c1d8;--sky-5:#00afca;--sky-6:#0094ad;--sky-7:#00788d;--sky-8:#005d6e;--sky-9:#003f4c;
+  --sun-0:#fffae6;--sun-1:#fff1bf;--sun-2:#ffe58a;--sun-3:#ffd950;--sun-4:#fecd26;--sun-5:#fec50c;--sun-6:#e0a800;--sun-7:#b08300;--sun-8:#8a6500;--sun-9:#5e4500;
+  --slate-0:#f5f8fa;--slate-1:#edf2f5;--slate-2:#e2e8ee;--slate-3:#cbd5dd;--slate-4:#a3b1be;--slate-5:#7a8b9b;--slate-6:#5b6b7b;--slate-7:#3f4e5c;--slate-8:#26333f;--slate-9:#0b1622;
+  --night-0:#c9d6e0;--night-1:#9fb3c4;--night-2:#6e879c;--night-3:#4a6378;--night-4:#2e4659;--night-5:#1d3447;--night-6:#132838;--night-7:#0e2030;--night-8:#0a1826;--night-9:#061220;
+  --green-0:#e7f6ef;--green-5:#2fb07f;--green-7:#0f7a55;--red-0:#fff0f1;--red-5:#e5485b;--red-7:#c4283c;
+  --surface-page:var(--slate-0);--surface-raised:#fff;--surface-sunken:var(--slate-1);--surface-hover:#f0f6f9;--surface-selected:var(--sky-0);
+  --text-primary:var(--slate-9);--text-secondary:var(--slate-6);--text-muted:var(--slate-5);--text-link:var(--sky-7);
+  --border-subtle:var(--slate-2);--border-default:var(--slate-3);--border-strong:var(--slate-4);
+  --focus-ring:0 0 0 3px rgba(0,175,202,.35);
+  --radius-xs:4px;--radius-sm:6px;--radius-md:8px;--radius-lg:12px;--radius-xl:20px;--radius-full:999px;
+  --shadow-xs:0 1px 2px rgba(11,22,34,.06);
+  --shadow-sm:0 1px 2px rgba(11,22,34,.05),0 2px 6px rgba(11,22,34,.05);
+  --shadow-md:0 2px 4px rgba(11,22,34,.04),0 8px 24px rgba(11,40,60,.08);
+  --shadow-lg:0 4px 8px rgba(11,22,34,.04),0 20px 48px rgba(11,40,60,.14);
+  --shadow-cloud:0 24px 60px -12px rgba(0,93,110,.32);
+  --font-display:"Bricolage Grotesque","Onest",system-ui,sans-serif;
+  --font-sans:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --font-mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  --duration-fast:120ms;--duration-base:180ms;--duration-slow:320ms;--duration-reveal:900ms;
+  --ease-standard:cubic-bezier(.2,0,0,1);--ease-out:cubic-bezier(.16,1,.3,1);--ease-float:cubic-bezier(.45,0,.55,1);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+body{font-family:var(--font-sans);font-size:14px;line-height:1.5;color:var(--text-primary);background:#fff;min-width:1280px}
+a{color:inherit;text-decoration:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--sky-5);outline-offset:2px}
+.icon{width:18px;height:18px;flex:none;stroke:currentColor;fill:none;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round}
+.mono{font-family:var(--font-mono);font-feature-settings:"zero" 1}
+
+/* =====================================================================
+   1. LANDING HERO
+   ===================================================================== */
+.hero{position:relative;height:900px;overflow:hidden;background:#1f8fd0}
+.hero__inner{position:relative;max-width:1440px;height:100%;margin:0 auto}
+
+/* photo: real sky (assets/sky-hero.jpg), cloud bank pinned to the bottom edge. Only a slow transform drift. */
+.sky{position:absolute;inset:0;z-index:0;overflow:hidden}
+.sky img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;object-position:50% 100%;transform-origin:50% 100%;
+  animation:skydrift 80s ease-in-out infinite alternate;will-change:transform}
+@keyframes skydrift{from{transform:scale(1.04) translateX(-6px)}to{transform:scale(1.06) translateX(6px)}}
+/* brand grade: pulls the navy top toward flag blue, hides the vignette, hazes the horizon into the next section */
+.sky::after{content:"";position:absolute;inset:0;pointer-events:none;
+  background:
+    linear-gradient(180deg,rgba(255,255,255,0) 82%,rgba(244,252,254,.9) 100%),
+    linear-gradient(180deg,rgba(0,175,202,.74) 0%,rgba(10,180,206,.66) 30%,rgba(60,198,220,.4) 58%,rgba(120,215,235,0) 80%)}
+/* light: no drawn sun, only a warm glow off the top-right corner */
+.glow{position:absolute;right:-260px;top:-380px;width:1100px;height:1100px;border-radius:50%;pointer-events:none;z-index:1;
+  background:radial-gradient(circle,rgba(255,244,214,.85) 0%,rgba(255,232,176,.38) 22%,rgba(255,226,170,.1) 40%,rgba(255,226,170,0) 55%)}
+
+/* nav */
+.nav{position:absolute;left:0;right:0;top:0;height:84px;display:flex;align-items:center;padding:0 96px;z-index:5}
+.brand{display:flex;align-items:center;gap:10px;font-family:var(--font-display);font-weight:700;font-size:26px;letter-spacing:-.03em;color:var(--slate-9)}
+.brand svg{width:34px;height:26px}
+.brand small{font-family:var(--font-sans);font-weight:500;font-size:12px;letter-spacing:0;color:var(--slate-7);margin-left:6px;padding:2px 8px;border-radius:999px;background:rgba(255,255,255,.5)}
+.nav__right{margin-left:auto;display:flex;align-items:center;gap:28px;font-weight:500}
+
+/* hero copy */
+.hero__copy{position:absolute;left:96px;top:200px;width:700px;z-index:4}
+.hero h1{font-family:var(--font-display);font-variation-settings:"opsz" 96;font-weight:700;font-size:96px;line-height:.98;letter-spacing:-.03em;color:var(--slate-9)}
+.hero h1 .line{display:block;overflow:hidden;padding-bottom:.06em;margin-bottom:-.06em}
+.hero h1 .line>span{display:block}
+.hero__cta{display:flex;gap:12px;margin-top:40px}
+
+.lbtn{display:inline-flex;align-items:center;gap:10px;height:52px;padding:0 24px;border-radius:var(--radius-full);font-weight:600;font-size:16px;transition:background var(--duration-fast) var(--ease-standard),transform var(--duration-fast) var(--ease-standard),box-shadow var(--duration-fast)}
+.lbtn--sun{background:var(--sun-5);color:var(--slate-9);box-shadow:0 10px 24px -8px rgba(176,131,0,.55),inset 0 -2px 0 rgba(0,0,0,.08)}
+.lbtn--sun:hover{background:var(--sun-4);transform:translateY(-1px)}
+.lbtn--glass{background:rgba(255,255,255,.6);color:var(--slate-9);box-shadow:inset 0 0 0 1px rgba(255,255,255,.9);backdrop-filter:blur(8px)}
+.lbtn--glass:hover{background:rgba(255,255,255,.85)}
+.lbtn--sm{height:40px;padding:0 18px;font-size:14px}
+
+/* terminal + flight */
+.term{position:absolute;left:818px;top:300px;width:520px;z-index:3;border-radius:var(--radius-xl);background:var(--night-8);color:#e6eef4;box-shadow:var(--shadow-cloud),0 0 0 1px rgba(255,255,255,.08) inset;overflow:hidden}
+.term__bar{display:flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-bottom:1px solid var(--night-6);font-size:12px;color:var(--night-1)}
+.term__bar i{width:10px;height:10px;border-radius:50%;background:var(--night-5)}
+.term__bar span{margin-left:8px;font-family:var(--font-mono)}
+.term__body{padding:16px 20px 20px;font-family:var(--font-mono);font-size:13.5px;line-height:1.85}
+.term__body .p{color:var(--sun-4)}
+.term__body .dim{color:var(--night-1)}
+.term__body .ok{color:#6ee0b0}
+.term__body .url{color:var(--sky-3)}
+.flight{position:absolute;left:880px;top:452px;z-index:4;pointer-events:none}
+.route{position:absolute;left:860px;top:460px;z-index:2;pointer-events:none;opacity:.7}
+.packet-x{position:absolute;left:0;top:0}
+.packet{display:inline-flex;align-items:center;gap:6px;padding:5px 10px 5px 8px;border-radius:999px;background:#fff;box-shadow:var(--shadow-md);font-family:var(--font-mono);font-size:12px;color:var(--slate-8);white-space:nowrap}
+.packet i{width:8px;height:8px;border-radius:50%;background:var(--sun-5);box-shadow:0 0 0 3px rgba(254,197,12,.3)}
+.livepill{position:absolute;left:930px;top:652px;z-index:4;display:flex;align-items:center;gap:10px;padding:10px 16px 10px 12px;border-radius:999px;background:#fff;box-shadow:var(--shadow-cloud);font-weight:500;font-size:15px;color:var(--slate-9)}
+.livepill .dot{width:10px;height:10px;border-radius:50%;background:var(--green-5);box-shadow:0 0 0 4px rgba(47,176,127,.2)}
+.livepill .mono{color:var(--sky-8);font-size:14px}
+.livepill small{font-size:12px;color:var(--green-7);font-weight:600;background:var(--green-0);padding:2px 8px;border-radius:999px}
+
+/* ---- intro choreography (runs once, after fonts load) ---- */
+.js .hero h1 .line>span{transform:translateY(105%)}
+.js .hero__cta{opacity:0;transform:translateY(12px)}
+.js .term{opacity:0;transform:translateY(24px)}
+.js .term__body>div{opacity:0}
+.js .term__body>div.l1{opacity:1}
+.js .route{opacity:0}
+.js .packet-x{opacity:0}
+.js .livepill{opacity:0;transform:translateY(34px) scale(.92)}
+
+.play .hero h1 .line>span{animation:rise var(--duration-reveal) var(--ease-out) both;animation-delay:calc(var(--i)*90ms)}
+.play .hero__cta{animation:up 700ms var(--ease-out) 400ms both}
+.play .term{animation:up 800ms var(--ease-out) 450ms both}
+.play .term__body>.l2{animation:show 1ms linear 1450ms both}
+.play .route{animation:routeIn 600ms var(--ease-standard) 1600ms both}
+.play .packet-x{animation:px 1300ms cubic-bezier(.45,0,.75,1) 1750ms both, fadeOut 300ms linear 2800ms both}
+.play .packet-y{animation:py 1300ms cubic-bezier(.15,.7,.3,1) 1750ms both}
+.play .livepill{animation:drop 900ms var(--ease-out) 3200ms both}
+.play .term__body>.l3{animation:show 1ms linear 3500ms both}
+@keyframes rise{to{transform:translateY(0)}}
+@keyframes up{to{opacity:1;transform:none}}
+@keyframes show{to{opacity:1}}
+@keyframes routeIn{to{opacity:.7}}
+@keyframes px{0%{opacity:1;transform:translateX(0)}100%{opacity:1;transform:translateX(150px)}}
+@keyframes py{to{transform:translateY(236px)}}
+@keyframes fadeOut{0%{opacity:1}100%{opacity:0}}
+@keyframes drop{to{opacity:1;transform:none}}
+
+/* =====================================================================
+   2. HOW IT WORKS
+   ===================================================================== */
+.how{background:linear-gradient(180deg,#f4fcfe 0%,#fff 140px);padding:72px 96px 96px}
+.steps{list-style:none;position:relative;display:grid;grid-template-columns:repeat(3,1fr);gap:24px;max-width:1248px;margin:0 auto}
+.steps::before{content:"";position:absolute;left:28px;right:28px;top:27px;height:2px;background:linear-gradient(90deg,var(--sky-2),var(--sky-4) 60%,var(--sun-5))}
+.credit{max-width:1248px;margin:56px auto 0;font-size:12px;color:var(--slate-6)}
+.credit a{text-decoration:underline;text-underline-offset:2px}
+.step{position:relative}
+.step__n{position:relative;display:grid;place-items:center;width:56px;height:56px;border-radius:50%;background:#fff;border:2px solid var(--sky-4);font-family:var(--font-display);font-weight:700;font-size:22px;color:var(--sky-8)}
+.step:last-child .step__n{border-color:var(--sun-5);background:var(--sun-5);color:var(--slate-9)}
+.step p{margin-top:8px;font-size:16px;color:var(--slate-6)}
+.step h3{margin-top:24px;font-family:var(--font-display);font-weight:650;font-size:32px;letter-spacing:-.025em}
+
+/* =====================================================================
+   3. FOUNDATIONS
+   ===================================================================== */
+.found{background:var(--slate-0);padding:88px 96px;border-top:1px solid var(--slate-2)}
+.found__wrap{max-width:1248px;margin:0 auto}
+.sec-title{font-size:13px;font-weight:600;color:var(--sky-8);margin-bottom:8px}
+.found h2{font-size:28px;font-weight:600;letter-spacing:-.015em;margin-bottom:32px}
+.ramp{display:grid;grid-template-columns:120px repeat(10,1fr);gap:6px;align-items:center;margin-bottom:10px}
+.ramp b{font-weight:500;font-size:13px}
+.sw{height:52px;border-radius:var(--radius-sm);position:relative;display:flex;align-items:end;padding:6px;font-family:var(--font-mono);font-size:10.5px}
+.sw.anchor{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--slate-9)}
+.type-grid{display:grid;grid-template-columns:1.3fr 1fr 1fr;gap:24px;margin-top:48px}
+.tcard{background:#fff;border:1px solid var(--slate-2);border-radius:var(--radius-lg);padding:24px}
+.tcard small{display:block;font-size:12px;color:var(--slate-6);margin-bottom:14px}
+.tcard .big{font-family:var(--font-display);font-weight:700;font-size:64px;line-height:1;letter-spacing:-.04em}
+.tcard .ui{font-size:30px;font-weight:600;letter-spacing:-.015em}
+.tcard .mn{font-family:var(--font-mono);font-size:15px;line-height:1.7;color:var(--slate-8)}
+
+/* =====================================================================
+   4. DASHBOARD
+   ===================================================================== */
+.screen-label{background:#fff;padding:56px 96px 20px;max-width:1440px;margin:0 auto}
+.app{display:grid;grid-template-columns:240px 1fr;height:900px;background:var(--surface-page);border-top:1px solid var(--slate-2);border-bottom:1px solid var(--slate-2);position:relative;overflow:hidden}
+.side{background:#fff;border-right:1px solid var(--slate-2);display:flex;flex-direction:column;padding:16px 12px}
+.side .brand{font-size:22px;padding:4px 8px 20px}
+.side .brand svg{width:30px;height:23px}
+.navi{display:flex;flex-direction:column;gap:2px}
+.navi a{display:flex;align-items:center;gap:10px;height:36px;padding:0 10px;border-radius:var(--radius-md);font-weight:500;color:var(--slate-7);transition:background var(--duration-fast) var(--ease-standard)}
+.navi a:hover{background:var(--slate-1)}
+.navi a.on{background:var(--sky-0);color:var(--sky-8)}
+.navi a.on .icon{color:var(--sky-7)}
+.navi .count{margin-left:auto;font-size:12px;color:var(--slate-6)}
+.side h6{font-size:12px;font-weight:500;color:var(--slate-6);margin:24px 10px 6px}
+.nodes-mini{display:flex;flex-direction:column;gap:6px;padding:0 10px;font-size:13px;color:var(--slate-7)}
+.nodes-mini div{display:flex;align-items:center;gap:8px}
+.nodes-mini span.mono{margin-left:auto;font-size:11.5px;color:var(--slate-6)}
+.user{margin-top:auto;display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--slate-2)}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,var(--sky-3),var(--sky-6));color:#fff;display:grid;place-items:center;font-weight:600;font-size:13px}
+.user div{line-height:1.3}.user small{color:var(--slate-6);font-size:12px}
+
+.main{display:flex;flex-direction:column;min-width:0}
+.top{height:56px;display:flex;align-items:center;gap:12px;padding:0 32px;border-bottom:1px solid var(--slate-2);background:rgba(255,255,255,.7)}
+.crumbs{display:flex;align-items:center;gap:8px;color:var(--slate-6);font-weight:500}
+.crumbs b{color:var(--slate-9);font-weight:600}
+.search{margin-left:auto;width:280px;height:34px;display:flex;align-items:center;gap:8px;padding:0 10px;border:1px solid var(--slate-2);border-radius:var(--radius-md);background:var(--slate-0);color:var(--slate-5);font-size:13px}
+.search kbd{margin-left:auto;font-family:var(--font-mono);font-size:11px;border:1px solid var(--slate-3);border-radius:4px;padding:0 5px;color:var(--slate-6);background:#fff}
+.content{padding:32px;overflow:hidden}
+.page-head{display:flex;align-items:flex-end;gap:16px;margin-bottom:24px}
+.page-head h1{font-size:24px;font-weight:600;letter-spacing:-.015em;line-height:1.2}
+.page-head p{color:var(--slate-6);margin-top:4px}
+.page-head .actions{margin-left:auto;display:flex;gap:8px}
+
+/* buttons */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;height:36px;padding:0 14px;border-radius:var(--radius-md);font-weight:500;font-size:14px;border:1px solid transparent;transition:background var(--duration-fast) var(--ease-standard),border-color var(--duration-fast),box-shadow var(--duration-fast);white-space:nowrap}
+.btn .icon{width:16px;height:16px}
+.btn:focus-visible{outline:none;box-shadow:var(--focus-ring)}
+.btn--primary{background:var(--sky-5);border-color:var(--sky-6);color:var(--slate-9)}
+.btn--primary:hover{background:var(--sky-4)}
+.btn--secondary{background:#fff;border-color:var(--slate-3);color:var(--slate-9);box-shadow:var(--shadow-xs)}
+.btn--secondary:hover{background:var(--slate-0)}
+.btn--subtle{color:var(--slate-7)}.btn--subtle:hover{background:var(--slate-1)}
+.btn--danger{background:var(--red-7);color:#fff}.btn--danger:hover{background:#ad2135}
+.btn--danger-light{background:var(--red-0);color:var(--red-7)}.btn--danger-light:hover{background:#ffe2e5}
+.btn--sm{height:30px;padding:0 10px;font-size:13px}
+.btn--lg{height:42px;padding:0 18px;font-size:15px}
+.btn[disabled]{background:var(--slate-1);border-color:var(--slate-2);color:var(--slate-5);box-shadow:none;cursor:not-allowed}
+.btn--icon{width:32px;padding:0;height:32px;color:var(--slate-6)}
+.btn--icon:hover{background:var(--slate-1);color:var(--slate-9)}
+.spin{width:14px;height:14px;border-radius:50%;border:2px solid rgba(11,22,34,.25);border-top-color:var(--slate-9);animation:spin .8s linear infinite}
+
+/* table */
+.tablecard{background:#fff;border:1px solid var(--slate-2);border-radius:var(--radius-lg);box-shadow:var(--shadow-xs);overflow:hidden}
+.tablebar{display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--slate-2)}
+.seg{display:flex;background:var(--slate-1);border-radius:var(--radius-md);padding:3px}
+.seg button{height:26px;padding:0 10px;border-radius:6px;font-size:13px;font-weight:500;color:var(--slate-6)}
+.seg button.on{background:#fff;color:var(--slate-9);box-shadow:var(--shadow-xs)}
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font-size:12px;font-weight:500;color:var(--slate-6);background:var(--slate-0);padding:10px 16px;border-bottom:1px solid var(--slate-2)}
+td{padding:14px 16px;border-bottom:1px solid var(--slate-2);font-size:13px;vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr{transition:background var(--duration-fast)}
+tbody tr:hover{background:var(--surface-hover)}
+.appname{display:flex;align-items:center;gap:12px}
+.appicon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-weight:600;font-size:14px;color:var(--sky-8);background:var(--sky-0);border:1px solid var(--sky-1)}
+.appname b{display:block;font-weight:600;font-size:14px}
+.appname small{color:var(--slate-6);font-size:12px}
+.link{display:inline-flex;align-items:center;gap:5px;color:var(--sky-7);font-family:var(--font-mono);font-size:12.5px}
+.link:hover{text-decoration:underline;text-underline-offset:3px}
+.link .icon{width:13px;height:13px}
+.muted{color:var(--slate-6)}
+.sha{font-family:var(--font-mono);font-size:12px;color:var(--slate-8);background:var(--slate-1);padding:2px 6px;border-radius:4px}
+
+/* badges */
+.badge{display:inline-flex;align-items:center;gap:6px;height:24px;padding:0 9px 0 8px;border-radius:var(--radius-sm);font-size:12px;font-weight:500;white-space:nowrap;transition:background var(--duration-base) var(--ease-standard),color var(--duration-base)}
+.badge i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.badge--building{background:var(--sun-0);color:var(--sun-8);box-shadow:inset 0 0 0 1px var(--sun-1)}
+.badge--building i{background:var(--sun-5);animation:pulse 1.4s var(--ease-float) infinite}
+.badge--starting{background:var(--sky-0);color:var(--sky-8);box-shadow:inset 0 0 0 1px var(--sky-1)}
+.badge--starting i{background:var(--sky-5);animation:pulse 1.4s var(--ease-float) infinite}
+.badge--running{background:var(--green-0);color:var(--green-7);box-shadow:inset 0 0 0 1px #c6ebda}
+.badge--running i{background:var(--green-5)}
+.badge--failed{background:var(--red-0);color:var(--red-7);box-shadow:inset 0 0 0 1px #ffd9dd}
+.badge--failed i{background:var(--red-5)}
+.badge--stopped{background:var(--slate-1);color:var(--slate-6);box-shadow:inset 0 0 0 1px var(--slate-2)}
+.badge--stopped i{background:var(--slate-4)}
+@keyframes pulse{50%{opacity:.35}}
+
+/* detail screen */
+.detail-head{display:flex;align-items:center;gap:16px;margin-bottom:24px}
+.detail-head .appicon{width:48px;height:48px;font-size:20px;border-radius:12px}
+.detail-head h1{font-size:24px;font-weight:600;letter-spacing:-.015em;display:flex;align-items:center;gap:12px}
+.detail-head .meta{display:flex;align-items:center;gap:14px;margin-top:4px;color:var(--slate-6);font-size:13px}
+.tabs{display:flex;gap:24px;border-bottom:1px solid var(--slate-2);margin-bottom:24px}
+.tabs a{padding:0 2px 12px;font-weight:500;color:var(--slate-6);border-bottom:2px solid transparent;margin-bottom:-1px}
+.tabs a.on{color:var(--slate-9);border-color:var(--sky-5)}
+.grid2{display:grid;grid-template-columns:400px 1fr;gap:20px;align-items:start}
+.card{background:#fff;border:1px solid var(--slate-2);border-radius:var(--radius-lg);box-shadow:var(--shadow-xs)}
+.card__head{display:flex;align-items:center;gap:10px;padding:16px 20px;border-bottom:1px solid var(--slate-2)}
+.card__head h3{font-size:15px;font-weight:600}
+.card__head .badge{margin-left:auto}
+.kv{padding:6px 20px 10px}
+.kv div{display:grid;grid-template-columns:110px 1fr;gap:12px;padding:10px 0;border-bottom:1px dashed var(--slate-2);align-items:center}
+.kv div:last-child{border-bottom:0}
+.kv dt{color:var(--slate-6);font-size:13px}
+.kv dd{font-size:13px;min-width:0;display:flex;align-items:center;gap:8px}
+.kv dd .mono{font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.copy{color:var(--slate-5);display:inline-grid;place-items:center;width:24px;height:24px;border-radius:6px;flex:none}
+.copy:hover{background:var(--slate-1);color:var(--slate-8)}
+.copy .icon{width:14px;height:14px}
+.card__foot{display:flex;gap:8px;padding:14px 20px;border-top:1px solid var(--slate-2);background:var(--slate-0);border-radius:0 0 var(--radius-lg) var(--radius-lg)}
+
+/* log viewer */
+.logs{background:var(--night-8);border-radius:var(--radius-lg);overflow:hidden;border:1px solid var(--night-6);color:#b9c7d3}
+.logs__bar{display:flex;align-items:center;gap:10px;height:44px;padding:0 12px 0 16px;border-bottom:1px solid var(--night-6);font-size:13px;color:#e6eef4}
+.logs__bar .seg{background:var(--night-6);margin-left:auto}
+.logs__bar .seg button{color:var(--night-1)}
+.logs__bar .seg button.on{background:var(--night-4);color:#fff;box-shadow:none}
+.logs__bar .live{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:#6ee0b0}
+.logs__bar .live i{width:6px;height:6px;border-radius:50%;background:#6ee0b0}
+.logs pre{font-family:var(--font-mono);font-size:12.5px;line-height:1.75;padding:12px 0;height:452px;overflow:auto;counter-reset:ln}
+.logs pre span.r{display:grid;grid-template-columns:44px 88px 1fr;padding:0 16px 0 0}
+.logs pre span.r:hover{background:var(--night-7)}
+.logs pre span.r::before{counter-increment:ln;content:counter(ln);text-align:right;padding-right:14px;color:var(--night-3);user-select:none}
+.logs .t{color:var(--night-2)}
+.logs .s{color:var(--sky-3)}
+.logs .w{color:var(--sun-4)}
+.logs .e{color:#ff8a97}
+.logs .g{color:#6ee0b0}
+.logs .hl{background:rgba(229,72,91,.12)}
+
+/* toast */
+.toasts{position:absolute;right:28px;bottom:28px;display:flex;flex-direction:column;gap:10px;width:380px}
+.toast{display:flex;gap:12px;padding:14px 14px 14px 16px;background:#fff;border:1px solid var(--slate-2);border-radius:var(--radius-lg);box-shadow:var(--shadow-lg);animation:toastIn var(--duration-slow) var(--ease-out) both}
+.toast__ic{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;flex:none}
+.toast__ic .icon{width:16px;height:16px;stroke-width:2.2}
+.toast--ok .toast__ic{background:var(--green-0);color:var(--green-7)}
+.toast--err .toast__ic{background:var(--red-0);color:var(--red-7)}
+.toast--info .toast__ic{background:var(--sky-0);color:var(--sky-7)}
+.toast b{display:block;font-weight:600;font-size:14px}
+.toast p{color:var(--slate-6);font-size:13px;margin-top:2px}
+.toast .x{margin-left:auto;align-self:flex-start;color:var(--slate-5)}
+@keyframes toastIn{from{opacity:0;transform:translateY(8px)}}
+
+/* components sheet */
+.sheet{background:var(--slate-0);padding:56px 96px 96px}
+.sheet__wrap{max-width:1248px;margin:0 auto;display:grid;grid-template-columns:repeat(2,1fr);gap:24px;align-items:start}
+.panel{background:#fff;border:1px solid var(--slate-2);border-radius:var(--radius-lg);padding:24px}
+.panel h4{font-size:13px;font-weight:600;color:var(--slate-6);margin-bottom:18px}
+.row{display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px}
+.row:last-child{margin-bottom:0}
+.field{display:flex;flex-direction:column;gap:6px;margin-bottom:18px}
+.field label{font-weight:500;font-size:13px}
+.field label span{color:var(--red-7)}
+.input{display:flex;align-items:center;gap:8px;height:36px;padding:0 12px;border:1px solid var(--slate-3);border-radius:var(--radius-md);background:#fff;font-size:14px;transition:border-color var(--duration-fast),box-shadow var(--duration-fast)}
+.input input{border:0;outline:0;font:inherit;flex:1;background:none;color:var(--slate-9);min-width:0}
+.input input::placeholder{color:var(--slate-5)}
+.input .pre{color:var(--slate-6);font-family:var(--font-mono);font-size:13px}
+.input .suf{color:var(--slate-6);font-family:var(--font-mono);font-size:13px}
+.input:focus-within,.input.is-focus{border-color:var(--sky-5);box-shadow:var(--focus-ring)}
+.input.is-error{border-color:var(--red-7)}
+.input.is-error:focus-within{box-shadow:0 0 0 3px rgba(196,40,60,.2)}
+.input.is-error .icon{color:var(--red-7);width:16px;height:16px}
+.hint{font-size:12px;color:var(--slate-6)}
+.err{font-size:12px;color:var(--red-7);display:flex;gap:6px;align-items:flex-start}
+.empty{grid-column:1/-1;display:flex;flex-direction:column;align-items:center;text-align:center;padding:56px 24px;border:1px dashed var(--slate-3);border-radius:var(--radius-lg);background:#fff}
+.empty svg.art{width:180px;height:100px;margin-bottom:20px}
+.empty h3{font-size:18px;font-weight:600}
+.empty p{color:var(--slate-6);max-width:400px;margin:6px 0 20px}
+.toast-static{animation:none}
+
+/* ===== reduced motion: everything static and in its final state ===== */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .js .hero h1 .line>span,.js .hero__cta,.js .term,.js .term__body>div,.js .livepill{opacity:1;transform:none}
+  .js .route{opacity:.7}
+  .js .packet-x{opacity:0}
+}
+</style>
+</head>
+<body>
+<script>document.documentElement.classList.add('js')</script>
+
+<!-- icon sprite (Tabler-style, 24px grid, 1.75 stroke) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <linearGradient id="cloudGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff"/><stop offset=".7" stop-color="#fff"/><stop offset="1" stop-color="#d9f1f7"/></linearGradient>
+  </defs>
+  <symbol id="cloud" viewBox="0 0 240 110"><path fill="url(#cloudGrad)" d="M38 108a34 34 0 0 1-4-67.8A44 44 0 0 1 116 22a38 38 0 0 1 62 14 36 36 0 0 1 24 72z"/></symbol>
+  <symbol id="logo" viewBox="0 0 34 26"><circle cx="24.5" cy="8" r="6.5" fill="#fec50c"/><path fill="#0b1622" d="M9 25a7.5 7.5 0 0 1-1-14.93A9.5 9.5 0 0 1 26 12.5a6.25 6.25 0 0 1 .5 12.5z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6" rx="1.5"/><rect x="14" y="4" width="6" height="6" rx="1.5"/><rect x="4" y="14" width="6" height="6" rx="1.5"/><rect x="14" y="14" width="6" height="6" rx="1.5"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M7 18a4.6 4.4 0 0 1 0-9 5 4.5 0 0 1 11 2h1a3.5 3.5 0 0 1 0 7h-1"/><path d="M9 15l3-3 3 3"/><path d="M12 12v9"/></symbol>
+  <symbol id="i-server" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="8" rx="3"/><rect x="3" y="12" width="18" height="8" rx="3"/><path d="M7 8v.01M7 16v.01"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 0 0-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 0 0-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 0 0-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 0 0-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 0 0 1.066-2.573c-.94-1.543.826-3.31 2.37-2.37 1 .608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="10" cy="10" r="7"/><path d="M21 21l-6-6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M12 6H6a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/><path d="M11 13l9-9M15 4h5v5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/></symbol>
+  <symbol id="i-commit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v6M12 15v6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M5 12l5 5L20 7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 8v4M12 16h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11A8.1 8.1 0 0 0 4.5 9M4 5v4h4"/><path d="M4 13a8.1 8.1 0 0 0 15.5 2m.5 4v-4h-4"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 24 24"><circle cx="7" cy="18" r="2"/><circle cx="7" cy="6" r="2"/><circle cx="17" cy="6" r="2"/><path d="M7 8v8M17 8a6 6 0 0 1-6 6H9"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></symbol>
+  <symbol id="i-box" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+  <symbol id="i-logs" viewBox="0 0 24 24"><path d="M4 6h16M4 12h10M4 18h14"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M18 13l-6 6-6-6"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></symbol>
+  <symbol id="i-player" viewBox="0 0 24 24"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></symbol>
+</svg>
+
+<!-- =============================== 1. HERO =============================== -->
+<header class="hero bult-sky" id="hero">
+  <div class="sky" aria-hidden="true"><img src="assets/sky-hero.jpg" width="2400" height="1600" alt="" fetchpriority="high" decoding="async"></div>
+  <div class="glow" aria-hidden="true"></div>
+  <div class="hero__inner">
+
+    <nav class="nav" aria-label="Main">
+      <a class="brand" href="#"><svg aria-hidden="true"><use href="#logo"/></svg>bult<small>бұлт = cloud</small></a>
+      <div class="nav__right"><a href="#">GitHub</a><a href="#">Sign in</a></div>
+    </nav>
+
+    <div class="hero__copy">
+      <h1 aria-label="From git push to a live URL.">
+        <span class="line" aria-hidden="true"><span style="--i:0">From git push</span></span>
+        <span class="line" aria-hidden="true"><span style="--i:1">to a live URL.</span></span>
+      </h1>
+      <div class="hero__cta">
+        <a class="lbtn lbtn--sun" href="#">Deploy an app</a>
+        <a class="lbtn lbtn--glass" href="#how">How it works</a>
+      </div>
+    </div>
+
+    <svg class="route" width="260" height="250" viewBox="0 0 260 250" aria-hidden="true"><path d="M70 4 C 62 120, 110 190, 190 232" fill="none" stroke="#fff" stroke-width="2" stroke-dasharray="2 8" stroke-linecap="round"/></svg>
+    <div class="flight" aria-hidden="true"><div class="packet-x"><div class="packet-y"><span class="packet"><i></i>a3f9c1e</span></div></div></div>
+
+    <div class="livepill" role="status"><span class="dot"></span><span class="mono">https://blog.bult.localhost</span><small>Live</small></div>
+
+    <div class="term" aria-label="Terminal: deploying blog">
+      <div class="term__bar"><i></i><i></i><i></i><span>~/code/blog</span></div>
+      <div class="term__body">
+        <div class="l1"><span class="p">$</span> git push origin main</div>
+        <div class="l2">bult: building <span class="url">blog</span> <span class="dim">(a3f9c1e)</span></div>
+        <div class="l3"><span class="ok">✓</span> live at <span class="url">blog.bult.localhost</span></div>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- =========================== 2. HOW IT WORKS =========================== -->
+<section class="how" id="how">
+  <ol class="steps" role="list">
+    <li class="step"><div class="step__n">1</div><h3>Push</h3><p>Commit to GitHub.</p></li>
+    <li class="step"><div class="step__n">2</div><h3>Build</h3><p>One image, built once.</p></li>
+    <li class="step"><div class="step__n">3</div><h3>Run</h3><p>Replicas behind nginx.</p></li>
+  </ol>
+  <p class="credit"><a href="https://unsplash.com/photos/white-cloud-sky-lNxMcE8mvIM" rel="noopener">Photo: Kumiko Shimizu / Unsplash</a></p>
+</section>
+
+<!-- =========================== 3. FOUNDATIONS =========================== -->
+<section class="found">
+  <div class="found__wrap">
+    <p class="sec-title">Foundations</p>
+    <h2>Color and type</h2>
+    <div id="ramps"></div>
+    <div class="type-grid">
+      <div class="tcard"><small>Bricolage Grotesque · landing</small><div class="big">Up in the clouds</div></div>
+      <div class="tcard"><small>Onest · UI</small><div class="ui">Deploy details</div></div>
+      <div class="tcard"><small>JetBrains Mono · machine values</small><div class="mn">a3f9c1e<br>sha256:9f2c07…e41a<br>192.168.252.6:32768</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- =========================== 4a. DASHBOARD: APPS =========================== -->
+<div class="screen-label"><p class="sec-title">Dashboard</p><h2 style="font-size:28px;font-weight:600;letter-spacing:-.015em">Apps list</h2></div>
+<section class="app" id="dash">
+  <aside class="side">
+    <a class="brand" href="#"><svg aria-hidden="true"><use href="#logo"/></svg>bult</a>
+    <nav class="navi" aria-label="Dashboard">
+      <a class="on" href="#"><svg class="icon"><use href="#i-grid"/></svg>Apps<span class="count">5</span></a>
+      <a href="#"><svg class="icon"><use href="#i-upload"/></svg>Deploys</a>
+      <a href="#"><svg class="icon"><use href="#i-server"/></svg>Nodes</a>
+      <a href="#"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </nav>
+    <h6>Nodes</h6>
+    <div class="nodes-mini">
+      <div><span class="badge--running" style="width:7px;height:7px;border-radius:50%;background:var(--green-5)"></span>bult-node-1</div>
+      <div><span style="width:7px;height:7px;border-radius:50%;background:var(--green-5)"></span>bult-node-2</div>
+      <div><span style="width:7px;height:7px;border-radius:50%;background:var(--sun-5)"></span>bult-builder</div>
+    </div>
+    <div class="user"><span class="avatar">A</span><div><b style="font-weight:500">Aru Sadykova</b><br><small>aru@bult.localhost</small></div></div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <div class="crumbs"><b>Apps</b></div>
+      <label class="search"><svg class="icon" style="width:15px;height:15px"><use href="#i-search"/></svg>Search apps<kbd>⌘K</kbd></label>
+    </div>
+    <div class="content">
+      <div class="page-head">
+        <div><h1>Apps</h1></div>
+        <div class="actions"><button class="btn btn--primary"><svg class="icon"><use href="#i-plus"/></svg>New app</button></div>
+      </div>
+      <div class="tablecard">
+        <div class="tablebar">
+          <div class="seg"><button class="on">All</button><button>Running</button><button>Failed</button></div>
+        </div>
+        <table>
+          <thead><tr><th style="width:26%">App</th><th>URL</th><th>Status</th><th>Last deploy</th><th>Replicas</th><th style="width:48px"></th></tr></thead>
+          <tbody>
+            <tr><td><div class="appname"><span class="appicon">b</span><div><b>blog</b><small>aru/blog · main</small></div></div></td><td><a class="link" href="#">blog.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a></td><td><span class="badge badge--running"><i></i>Running</span></td><td><span class="sha">a3f9c1e</span> <span class="muted">&nbsp;3 min ago</span></td><td class="muted">2 / 2</td><td><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></td></tr>
+            <tr><td><div class="appname"><span class="appicon">a</span><div><b>api</b><small>aru/notes-api · main</small></div></div></td><td><a class="link" href="#">api.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a></td><td><span class="badge badge--building"><i></i>Building</span></td><td><span class="sha">7c20d9b</span> <span class="muted">&nbsp;just now</span></td><td class="muted">1 / 1</td><td><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></td></tr>
+            <tr><td><div class="appname"><span class="appicon">d</span><div><b>docs</b><small>aru/docs-site · main</small></div></div></td><td><a class="link" href="#">docs.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a></td><td><span class="badge badge--starting"><i></i>Starting</span></td><td><span class="sha">e81f4a2</span> <span class="muted">&nbsp;1 min ago</span></td><td class="muted">0 / 2</td><td><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></td></tr>
+            <tr><td><div class="appname"><span class="appicon">s</span><div><b>shop</b><small>aru/shop · feature/cart</small></div></div></td><td><a class="link" href="#">shop.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a></td><td><span class="badge badge--failed"><i></i>Failed</span></td><td><span class="sha">19bb0c4</span> <span class="muted">&nbsp;12 min ago</span></td><td class="muted">0 / 1</td><td><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></td></tr>
+            <tr><td><div class="appname"><span class="appicon">p</span><div><b>portfolio</b><small>aru/portfolio · main</small></div></div></td><td><a class="link" href="#">portfolio.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a></td><td><span class="badge badge--stopped"><i></i>Stopped</span></td><td><span class="sha">0d6e7f1</span> <span class="muted">&nbsp;2 days ago</span></td><td class="muted">0 / 0</td><td><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="toasts"><div class="toast toast--info"><span class="toast__ic"><svg class="icon"><use href="#i-upload"/></svg></span><div><b>Building api</b><p><span class="mono" style="font-size:12px">7c20d9b</span></p></div><button class="x" aria-label="Dismiss"><svg class="icon" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div></div>
+</section>
+
+<!-- =========================== 4b. DASHBOARD: APP DETAIL =========================== -->
+<div class="screen-label"><h2 style="font-size:28px;font-weight:600;letter-spacing:-.015em">App detail</h2></div>
+<section class="app" id="detail">
+  <aside class="side">
+    <a class="brand" href="#"><svg aria-hidden="true"><use href="#logo"/></svg>bult</a>
+    <nav class="navi" aria-label="Dashboard">
+      <a class="on" href="#"><svg class="icon"><use href="#i-grid"/></svg>Apps<span class="count">5</span></a>
+      <a href="#"><svg class="icon"><use href="#i-upload"/></svg>Deploys</a>
+      <a href="#"><svg class="icon"><use href="#i-server"/></svg>Nodes</a>
+      <a href="#"><svg class="icon"><use href="#i-settings"/></svg>Settings</a>
+    </nav>
+    <div class="user"><span class="avatar">A</span><div><b style="font-weight:500">Aru Sadykova</b><br><small>aru@bult.localhost</small></div></div>
+  </aside>
+  <div class="main">
+    <div class="top">
+      <div class="crumbs">Apps<svg class="icon" style="width:14px;height:14px"><use href="#i-chev"/></svg><b>blog</b></div>
+      <label class="search"><svg class="icon" style="width:15px;height:15px"><use href="#i-search"/></svg>Search apps<kbd>⌘K</kbd></label>
+    </div>
+    <div class="content">
+      <div class="detail-head">
+        <span class="appicon">b</span>
+        <div>
+          <h1>blog <span class="badge badge--running"><i></i>Running</span></h1>
+          <div class="meta"><a class="link" href="#">https://blog.bult.localhost<svg class="icon"><use href="#i-ext"/></svg></a><span>aru/blog · main</span><span>Python preset</span></div>
+        </div>
+        <div class="actions" style="margin-left:auto;display:flex;gap:8px">
+          <button class="btn btn--secondary"><svg class="icon"><use href="#i-ext"/></svg>Open app</button>
+          <button class="btn btn--primary"><svg class="icon"><use href="#i-refresh"/></svg>Redeploy</button>
+        </div>
+      </div>
+      <nav class="tabs"><a class="on" href="#">Overview</a><a href="#">Deploys</a><a href="#">Logs</a><a href="#">Settings</a></nav>
+      <div class="grid2">
+        <div class="card">
+          <div class="card__head"><svg class="icon" style="color:var(--sky-7)"><use href="#i-upload"/></svg><h3>Current deploy</h3><span class="badge badge--running"><i></i>Running</span></div>
+          <dl class="kv">
+            <div><dt>Commit</dt><dd><span class="sha">a3f9c1e</span><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Fix header layout on mobile</span></dd></div>
+            <div><dt>Image digest</dt><dd><span class="mono">sha256:9f2c07b1d4e8…a51c0e41a</span><button class="copy" aria-label="Copy digest"><svg class="icon"><use href="#i-copy"/></svg></button></dd></div>
+            <div><dt>Node</dt><dd>bult-node-1 <span class="mono muted">192.168.252.6</span></dd></div>
+            <div><dt>Host port</dt><dd><span class="mono">32768</span> <span class="muted">→ container 8000</span></dd></div>
+            <div><dt>Replicas</dt><dd>2 of 2 healthy</dd></div>
+            <div><dt>Deployed</dt><dd>3 min ago <span class="muted">· build 48 s</span></dd></div>
+          </dl>
+          <div class="card__foot"><button class="btn btn--secondary btn--sm"><svg class="icon"><use href="#i-player"/></svg>Stop app</button><button class="btn btn--danger-light btn--sm" style="margin-left:auto"><svg class="icon"><use href="#i-trash"/></svg>Delete app</button></div>
+        </div>
+        <div class="logs bult-night">
+          <div class="logs__bar"><svg class="icon" style="width:16px;height:16px;color:var(--night-1)"><use href="#i-logs"/></svg>Build log <span class="mono" style="color:var(--night-1);font-size:12px">a3f9c1e</span><span class="live"><i></i>Streaming</span><div class="seg"><button class="on">Build</button><button>Runtime</button></div><button class="btn btn--icon" style="color:var(--night-1)" aria-label="Download log"><svg class="icon"><use href="#i-down"/></svg></button></div>
+<pre><span class="r"><span class="t">14:02:11</span><span><span class="s">==&gt; clone</span> github.com/aru/blog@a3f9c1e</span></span><span class="r"><span class="t">14:02:12</span><span>Cloning into 'src'… done.</span></span><span class="r"><span class="t">14:02:12</span><span><span class="s">==&gt; build</span> preset python (Dockerfile generated)</span></span><span class="r"><span class="t">14:02:13</span><span>#1 [internal] load build definition from Dockerfile</span></span><span class="r"><span class="t">14:02:14</span><span>#4 [1/5] FROM python:3.13-slim@sha256:31c4…</span></span><span class="r"><span class="t">14:02:22</span><span>#7 [3/5] RUN pip install -r requirements.txt</span></span><span class="r"><span class="t">14:02:41</span><span class="w">#7 WARNING: pip is running as root; consider a venv</span></span><span class="r"><span class="t">14:02:52</span><span>#9 exporting to image</span></span><span class="r"><span class="t">14:02:59</span><span><span class="s">==&gt; push</span> 192.168.252.1:5050/blog:a3f9c1e</span></span><span class="r"><span class="t">14:03:01</span><span>digest: sha256:9f2c07b1d4e8…a51c0e41a size: 1789</span></span><span class="r"><span class="t">14:03:02</span><span><span class="s">==&gt; run</span> bult-node-1 replica 1/2</span></span><span class="r hl"><span class="t">14:03:04</span><span class="e">health check failed: connection refused on :8000 (retry 1/5)</span></span><span class="r"><span class="t">14:03:07</span><span>uvicorn running on http://0.0.0.0:8000</span></span><span class="r"><span class="t">14:03:07</span><span><span class="s">==&gt; run</span> bult-node-2 replica 2/2</span></span><span class="r"><span class="t">14:03:10</span><span class="g">✓ 2/2 replicas healthy · nginx reloaded</span></span><span class="r"><span class="t">14:03:10</span><span class="g">✓ live at https://blog.bult.localhost</span></span></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="toasts"><div class="toast toast--ok"><span class="toast__ic"><svg class="icon"><use href="#i-check"/></svg></span><div><b>Deployed blog</b><p><span class="mono" style="font-size:12px">a3f9c1e</span> is live</p></div><button class="x" aria-label="Dismiss"><svg class="icon" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div></div>
+</section>
+
+<!-- =========================== 5. COMPONENTS =========================== -->
+<section class="sheet" id="components">
+  <div style="max-width:1248px;margin:0 auto 24px"><p class="sec-title">Components</p><h2 style="font-size:28px;font-weight:600;letter-spacing:-.015em">States</h2></div>
+  <div class="sheet__wrap">
+    <div class="panel">
+      <h4>Buttons</h4>
+      <div class="row"><button class="btn btn--primary"><svg class="icon"><use href="#i-plus"/></svg>New app</button><button class="btn btn--secondary">Cancel</button><button class="btn btn--subtle">View logs</button><button class="btn btn--danger"><svg class="icon"><use href="#i-trash"/></svg>Delete app</button></div>
+      <div class="row"><button class="btn btn--primary btn--lg">Create app</button><button class="btn btn--primary btn--sm">Redeploy</button><button class="btn btn--primary" aria-busy="true"><span class="spin"></span>Deploying…</button><button class="btn btn--primary" disabled>Create app</button></div>
+      <div class="row"><button class="btn btn--danger-light btn--sm">Stop app</button><button class="btn btn--secondary btn--sm"><svg class="icon"><use href="#i-copy"/></svg>Copy URL</button><button class="btn btn--icon" aria-label="More"><svg class="icon"><use href="#i-dots"/></svg></button></div>
+    </div>
+    <div class="panel">
+      <h4>Deploy status</h4>
+      <div class="row"><span class="badge badge--building"><i></i>Building</span><span class="badge badge--starting"><i></i>Starting</span><span class="badge badge--running"><i></i>Running</span><span class="badge badge--failed"><i></i>Failed</span><span class="badge badge--stopped"><i></i>Stopped</span></div>
+      <p class="hint" style="margin:6px 0 18px">Dot + word. Only in-progress pulses.</p>
+      <h4>Toasts</h4>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="toast toast--err toast-static"><span class="toast__ic"><svg class="icon"><use href="#i-alert"/></svg></span><div><b>Deploy failed</b><p>shop: build exited with code 1. <a class="link" style="font-family:var(--font-sans);font-size:13px" href="#">Open build log</a></p></div><button class="x" aria-label="Dismiss"><svg class="icon" style="width:16px;height:16px"><use href="#i-x"/></svg></button></div>
+      </div>
+    </div>
+    <div class="panel">
+      <h4>Inputs</h4>
+      <div class="field"><label for="f1">App name <span>*</span></label><div class="input is-focus"><input id="f1" value="blog"><span class="suf">.bult.localhost</span></div><span class="hint">Becomes your subdomain.</span></div>
+      <div class="field"><label for="f2">GitHub repository <span>*</span></label><div class="input is-error"><span class="pre">github.com/</span><input id="f2" value="aru/blgo" aria-invalid="true" aria-describedby="f2e"><svg class="icon"><use href="#i-alert"/></svg></div><span class="err" id="f2e">Repository not found or private.</span></div>
+      <div class="field" style="margin-bottom:0"><label for="f3">Branch</label><div class="input"><svg class="icon" style="width:16px;height:16px;color:var(--slate-5)"><use href="#i-branch"/></svg><input id="f3" placeholder="main"></div></div>
+    </div>
+    <div class="panel">
+      <h4>Inline code and IDs</h4>
+      <p style="font-size:14px;line-height:1.9"><span class="sha">sha256:9f2c07…e41a</span> <span class="sha">192.168.252.1:5050</span> <span class="sha">bult-node-1</span> <span class="sha">32768</span></p>
+      <p class="hint" style="margin-top:12px">Mono: machine values only.</p>
+    </div>
+    <div class="empty">
+      <svg class="art" viewBox="0 0 180 100" aria-hidden="true"><circle cx="90" cy="50" r="48" fill="#e8f9fc"/><circle cx="112" cy="36" r="22" fill="#fec50c" opacity=".2"/><circle cx="112" cy="36" r="15" fill="#fec50c"/><use href="#cloud" x="34" y="40" width="112" height="52"/></svg>
+      <h3>No apps yet</h3>
+      <p>Connect a repo to get a URL.</p>
+      <button class="btn btn--primary btn--lg"><svg class="icon"><use href="#i-plus"/></svg>Create your first app</button>
+    </div>
+  </div>
+</section>
+
+<script>
+// Color ramps for the foundations section.
+(function(){
+  const L=h=>{const v=[1,3,5].map(i=>{let c=parseInt(h.substr(i,2),16)/255;return c<=.03928?c/12.92:Math.pow((c+.055)/1.055,2.4)});return .2126*v[0]+.7152*v[1]+.0722*v[2]};
+  const ramps={sky:['#e8f9fc','#c7f0f7','#97e3ef','#5fd3e4','#26c1d8','#00afca','#0094ad','#00788d','#005d6e','#003f4c'],
+    sun:['#fffae6','#fff1bf','#ffe58a','#ffd950','#fecd26','#fec50c','#e0a800','#b08300','#8a6500','#5e4500'],
+    slate:['#f5f8fa','#edf2f5','#e2e8ee','#cbd5dd','#a3b1be','#7a8b9b','#5b6b7b','#3f4e5c','#26333f','#0b1622'],
+    night:['#c9d6e0','#9fb3c4','#6e879c','#4a6378','#2e4659','#1d3447','#132838','#0e2030','#0a1826','#061220'],
+    green:['#e7f6ef','#c6ebda','#98dcbe','#64cba0','#2fb07f','#1f9a6c','#158a60','#0f7a55','#0a5f42','#05442f'],
+    red:['#fff0f1','#ffd9dd','#ffb3bb','#fb8794','#f05f71','#e5485b','#d43448','#c4283c','#9e1d2f','#721422']};
+  const anchors={sky:5,sun:5,slate:9,night:8,green:7,red:7};
+  let html='';
+  for(const [k,arr] of Object.entries(ramps)){
+    html+=`<div class="ramp"><b>${k}</b>`+arr.map((h,i)=>`<div class="sw${anchors[k]===i?' anchor':''}" style="background:${h};color:${L(h)>.3?'#0b1622':'#fff'}">${i}·${h.slice(1)}</div>`).join('')+'</div>';
+  }
+  document.getElementById('ramps').innerHTML=html;
+})();
+// Intro: start once fonts are ready (avoids reflow mid-reveal). Static under reduced motion via CSS.
+(function(){
+  const go=()=>document.documentElement.classList.add('play');
+  const t=setTimeout(go,1200);
+  (document.fonts?document.fonts.ready:Promise.resolve()).then(()=>{clearTimeout(t);requestAnimationFrame(go)});
+})();
+</script>
+</body>
+</html>

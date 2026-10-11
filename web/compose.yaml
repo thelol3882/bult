@@ -1,0 +1,20 @@
+# Web dashboard (dev). Included from the root compose.yaml, which also pulls in
+# control-plane/compose.yaml, so `api` resolves there. Not standalone-valid.
+
+services:
+    web:
+        image: node:22-alpine
+        working_dir: /app
+        command: sh -c "corepack enable && pnpm install --frozen-lockfile && pnpm dev -H 0.0.0.0"
+        ports:
+            - '127.0.0.1:3000:3000'
+        environment:
+            API_INTERNAL_URL: http://api:8000
+            WATCHPACK_POLLING: 'true'
+            NEXT_TELEMETRY_DISABLED: '1'
+        volumes:
+            - ./:/app
+            - /app/node_modules
+            - /app/.next
+        depends_on:
+            - api

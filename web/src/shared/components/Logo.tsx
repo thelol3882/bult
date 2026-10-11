@@ -1,0 +1,20 @@
+interface LogoProps {
+    size?: number;
+}
+
+export function Logo({ size = 34 }: LogoProps) {
+    return (
+        <svg
+            width={size}
+            height={Math.round((size * 26) / 34)}
+            viewBox="0 0 34 26"
+            aria-hidden="true"
+        >
+            <circle cx="24.5" cy="8" r="6.5" fill="#fec50c" />
+            <path
+                fill="#0b1622"
+                d="M9 25a7.5 7.5 0 0 1-1-14.93A9.5 9.5 0 0 1 26 12.5a6.25 6.25 0 0 1 .5 12.5z"
+            />
+        </svg>
+    );
+}

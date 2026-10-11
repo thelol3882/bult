@@ -1,0 +1,32 @@
+.root {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 56px 24px;
+    border: 1px dashed var(--slate-3);
+    border-radius: var(--radius-lg);
+    background: #fff;
+    text-align: center;
+}
+
+.art {
+    width: 180px;
+    height: 100px;
+    margin-bottom: 20px;
+}
+
+.root h3 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.root p {
+    max-width: 400px;
+    margin: 6px 0 0;
+    color: var(--slate-6);
+}
+
+.action {
+    margin-top: 20px;
+}

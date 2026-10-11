@@ -1,0 +1,10 @@
+node_modules
+.next
+coverage
+screenshots
+design-system
+.env*
+!.env.example
+Dockerfile
+compose.yaml
+README.md

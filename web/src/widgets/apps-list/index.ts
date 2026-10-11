@@ -1,0 +1,1 @@
+export { AppsListWidget } from './AppsListWidget';
