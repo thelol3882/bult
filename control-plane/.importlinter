@@ -79,3 +79,14 @@ forbidden_modules =
     app.deploys
     app.agents
     app.ingress
+
+[importlinter:contract:handlers-call-services-only]
+name = Deploys event handlers are entry points like routers and call services only
+type = forbidden
+source_modules =
+    app.deploys.handlers
+forbidden_modules =
+    app.deploys.repositories
+    app.agents
+    app.ingress
+allow_indirect_imports = True

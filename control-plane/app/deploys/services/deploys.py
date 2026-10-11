@@ -14,8 +14,8 @@ from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import InternalError, NotFoundError, ServiceUnavailableError
 from app.deploys.repositories.deploys import Deploy, DeployRepository
-from app.deploys.services.runner import run_deploy
-from app.ingress.routes import RouteWriter
+from app.deploys.services.runner import remove_replica_quietly, run_deploy
+from app.ingress.routes import RouteApplyError, RouteWriter, running_routes
 
 logger = logging.getLogger(__name__)
 
@@ -131,3 +131,36 @@ class DeployService:
         if deploy is None or deploy.app_name != app_name:
             raise DeployNotFoundError(deploy_id)
         return deploy
+
+    async def remove_app(self, app_name: str) -> None:
+        """Forget the app's deploys, drop its routes, remove its replicas (failures are logged)."""
+        gone = [d for d in self._repo.list_all() if d.app_name == app_name]
+        self._repo.delete_for_app(app_name)
+
+        # Routes first: stop sending traffic, then remove the replicas.
+        # Always re-applied: a deploy in flight may have published this app's route already.
+        gen: int | None = None
+        async with self._routes.lock:
+            desired = running_routes(self._repo.list_all(), self._settings.runners)
+            try:
+                gen = self._routes.apply(desired)
+                await self._routes.wait_applied(gen)
+            except (RouteApplyError, TimeoutError) as e:
+                logger.warning("delete %s: route update failed: %r", app_name, e)
+
+        removed = 0
+        for deploy in gone:
+            if deploy.status != "running" or not deploy.node:
+                continue
+            if await remove_replica_quietly(
+                self._agents, deploy.node, f"{deploy.id}-r0"
+            ):
+                removed += 1
+
+        logger.info(
+            "app %s deleted: %d deploys, %d replicas removed, route generation %s",
+            app_name,
+            len(gone),
+            removed,
+            gen if gen is not None else "-",
+        )

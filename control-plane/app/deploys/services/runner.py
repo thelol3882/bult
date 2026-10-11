@@ -168,17 +168,20 @@ def _log_cancelled(deploy_id: str) -> None:
 
 async def _remove_replica(agents: Agents, replica: ReplicaResult | None) -> None:
     """Compensate RunReplica; best effort."""
-    if replica is None:
-        return
+    if replica is not None:
+        _ = await remove_replica_quietly(agents, replica.node, replica.replica_id)
+
+
+async def remove_replica_quietly(agents: Agents, node: str, replica_id: str) -> bool:
+    """RemoveReplica, logging instead of raising; True if removed."""
     try:
-        await agents.remove_replica(node=replica.node, replica_id=replica.replica_id)
+        await agents.remove_replica(node=node, replica_id=replica_id)
     except Exception:
         logger.warning(
-            "could not remove replica %s on %s",
-            replica.replica_id,
-            replica.node,
-            exc_info=True,
+            "could not remove replica %s on %s", replica_id, node, exc_info=True
         )
+        return False
+    return True
 
 
 async def _wait_for_build(

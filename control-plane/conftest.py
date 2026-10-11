@@ -65,9 +65,11 @@ def app(
     monkeypatch.setenv("BULT_INGRESS_DIR", str(tmp_path / "lifespan-routes"))
 
     application = create_app()
-    application.state.deploy_tasks = set()
-    # Event handlers read these from app.state, not from Depends.
+    # The single place tests configure collaborators. Event handlers read app.state;
+    # the overrides keep the same objects when a test runs the lifespan (it would replace the state).
+    application.state.app_repo = app_repo
     application.state.deploy_repo = deploy_repo
+    application.state.deploy_tasks = set()
     application.state.agents = agents
     application.state.routes = routes
     application.state.settings = settings

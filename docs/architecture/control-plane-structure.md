@@ -26,7 +26,7 @@ app/
     tests/
     deps.py       Depends wiring for this domain
   deploys/        same shape; services/runner.py is the deploy saga orchestrator;
-                  handlers.py = subscribers of other domains' events (wired in main.py only)
+                  handlers.py = subscribers of other domains' events: thin entry points like routers, call services only (wired in main.py only)
   agents/         infrastructure: gRPC clients to node agents
   ingress/        infrastructure: route versions shared with the nginx sidecar
   main.py

@@ -9,6 +9,7 @@ from fastapi import FastAPI
 from app import health
 from app.agents.client import AgentClients
 from app.apps.events import AppDeleted
+from app.apps.public import build_apps_facade
 from app.apps.repositories.apps import InMemoryAppRepository
 from app.apps.routers import apps as apps_router
 from app.core import exception_handlers
@@ -17,6 +18,7 @@ from app.core.events import EventBus
 from app.core.logging import setup_logging
 from app.core.middleware import TraceIdMiddleware
 from app.deploys import handlers as deploys_handlers
+from app.deploys.deps import build_deploy_service
 from app.deploys.repositories.deploys import InMemoryDeployRepository
 from app.deploys.routers import deploys as deploys_router
 from app.ingress.routes import RouteWriter
@@ -43,18 +45,20 @@ async def lifespan(app: FastAPI):
 
 
 def _build_event_bus(app: FastAPI) -> EventBus:
-    """Wire subscriptions; handlers read dependencies from app.state when called."""
+    """Wire subscriptions; the service is built from app.state when an event arrives."""
     bus = EventBus()
 
     async def on_app_deleted(event: AppDeleted) -> None:
         state = app.state
-        await deploys_handlers.on_app_deleted(
-            event,
-            repo=state.deploy_repo,
-            agents=state.agents,
-            routes=state.routes,
-            runner_addrs=state.settings.runners,
+        deploys = build_deploy_service(
+            state.deploy_repo,
+            build_apps_facade(state.app_repo, state.settings, bus.collector()),
+            state.agents,
+            state.routes,
+            state.settings,
+            state.deploy_tasks,
         )
+        await deploys_handlers.on_app_deleted(event, deploys)
 
     bus.subscribe(AppDeleted, on_app_deleted)
     return bus
