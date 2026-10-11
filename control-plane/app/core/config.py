@@ -1,57 +1,48 @@
-"""Settings from environment variables (minimal; pydantic-settings in lesson 17)."""
+"""Settings from environment variables (prefix BULT_), parsed and validated at startup.
 
-import os
-from dataclasses import dataclass
+A missing or malformed variable makes `Settings()` raise one ValidationError that lists
+every problem, so the API refuses to start instead of failing on the first request.
+"""
 
+import json
+from typing import Annotated, Any, Literal
 
-@dataclass(frozen=True)
-class Settings:
-    builder_addr: str  # BULT_BUILDER, e.g. "192.168.252.8:50051"
-    runner_addrs: dict[
-        str, str
-    ]  # BULT_RUNNERS, e.g. "bult-node-1=192.168.252.6:50051,bult-node-2=…"
-    trusted_proxy: str  # BULT_TRUSTED_PROXY
-    ingress_dir: str = "/routes"  # BULT_INGRESS_DIR (optional)
+from pydantic import field_validator
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
-def _parse_runners(raw: str) -> dict[str, str]:
-    """Parse comma-separated 'name=addr' pairs into a dictionary."""
-    raw = raw.strip()
-    if not raw:
-        return {}
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(env_prefix="BULT_")
 
-    runners: dict[str, str] = {}
-    for entry in raw.split(","):
-        entry = entry.strip()
-        if not entry:
-            continue
-        if "=" not in entry:
-            raise ValueError(
-                f"Invalid entry in BULT_RUNNERS: '{entry}'. Expected format 'name=addr'."
-            )
-        name, addr = entry.split("=", 1)
-        runners[name.strip()] = addr.strip()
+    builder: str  # BULT_BUILDER, e.g. "192.168.252.8:50051"
+    # BULT_RUNNERS: "bult-node-1=192.168.252.6:50051,bult-node-2=…" (or a JSON object).
+    # NoDecode: hand the raw string to the validator instead of parsing it as JSON first.
+    runners: Annotated[dict[str, str], NoDecode]
+    trusted_proxy: str  # BULT_TRUSTED_PROXY: ingress address replicas trust for X-Forwarded-For
+    ingress_dir: str = "/routes"  # BULT_INGRESS_DIR
+    apps_scheme: Literal["http", "https"] = "http"  # ingress serves plain HTTP today
+    apps_domain: str = "bult.localhost"  # apps live at <name>.<apps_domain>
 
-    return runners
+    @field_validator("runners", mode="before")
+    @classmethod
+    def _parse_runners(cls, value: Any) -> Any:
+        """Accept 'name=addr,name=addr' (the compose format) or a JSON object."""
+        if not isinstance(value, str):
+            return value
 
+        raw = value.strip()
+        if raw.startswith("{"):
+            return json.loads(raw)
 
-def load_settings() -> Settings:
-    """Read Settings from os.environ; a missing variable fails at startup, loudly."""
-    required = {
-        "BULT_BUILDER": "builder_addr",
-        "BULT_RUNNERS": "runner_addrs",
-        "BULT_TRUSTED_PROXY": "trusted_proxy",
-    }
-
-    missing = [var for var in required if var not in os.environ]
-    if missing:
-        raise KeyError(
-            f"Startup failed: missing required environment variable(s): {', '.join(sorted(missing))}"
-        )
-
-    return Settings(
-        builder_addr=os.environ["BULT_BUILDER"],
-        runner_addrs=_parse_runners(os.environ["BULT_RUNNERS"]),
-        trusted_proxy=os.environ["BULT_TRUSTED_PROXY"],
-        ingress_dir=os.environ.get("BULT_INGRESS_DIR", "/routes"),
-    )
+        runners: dict[str, str] = {}
+        for entry in raw.split(","):
+            entry = entry.strip()
+            if not entry:
+                continue
+            name, sep, addr = entry.partition("=")
+            if not sep or not name.strip() or not addr.strip():
+                raise ValueError(
+                    f"invalid runner entry '{entry}', expected 'name=host:port'"
+                )
+            runners[name.strip()] = addr.strip()
+        return runners

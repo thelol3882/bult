@@ -5,11 +5,11 @@ import json
 
 import pytest
 
-from app.services.nginx import Route, RouteApplyError, RouteWriter, render
+from app.ingress.routes import Route, RouteApplyError, RouteWriter, render
 
 
 def test_render_server_block():
-    files = render([Route("blog", "192.168.252.6", 20002)])
+    files = render([Route("blog", "192.168.252.6", 20002)], "bult.localhost")
 
     assert list(files) == ["blog.conf"]
     conf = files["blog.conf"]
@@ -20,7 +20,7 @@ def test_render_server_block():
 
 
 def test_apply_writes_version_atomically(tmp_path):
-    writer = RouteWriter(tmp_path)
+    writer = RouteWriter(tmp_path, "bult.localhost")
     desired = tmp_path / "desired"
 
     gen1 = writer.apply([Route("blog", "192.168.252.6", 20002)])
@@ -38,13 +38,13 @@ def test_apply_writes_version_atomically(tmp_path):
 def test_numbering_continues_from_disk(tmp_path):
     (tmp_path / "status.json").write_text(json.dumps({"generation": 7, "ok": True}))
 
-    writer = RouteWriter(tmp_path)
+    writer = RouteWriter(tmp_path, "bult.localhost")
 
     assert writer.apply([]) == 8
 
 
 def test_wait_applied_rejected_and_timeout(tmp_path):
-    writer = RouteWriter(tmp_path)
+    writer = RouteWriter(tmp_path, "bult.localhost")
     status_file = tmp_path / "status.json"
 
     status_file.write_text(

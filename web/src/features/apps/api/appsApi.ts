@@ -24,8 +24,7 @@ export const appsApi = baseApi.injectEndpoints({
         }),
         deleteApp: build.mutation<void, string>({
             query: (name) => ({ url: `/apps/${encodeURIComponent(name)}`, method: 'DELETE' }),
-            // Only the list: invalidating the deleted app's own tag would refetch it (404)
-            // while the detail page is still mounted.
+            // List only: invalidating the app's own tag would refetch it (404).
             invalidatesTags: [{ type: 'App', id: 'LIST' }],
         }),
     }),

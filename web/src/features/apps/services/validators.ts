@@ -1,4 +1,4 @@
-// Mirrors control-plane/app/schemas/app.py.
+// Mirrors control-plane/app/apps/schemas/apps.py.
 export const RESERVED_NAMES: ReadonlySet<string> = new Set(['api', 'www', 'admin', 'registry']);
 export const DNS_LABEL_REGEX = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 

@@ -1,9 +1,4 @@
-"""Demo app for the bult FastAPI preset.
-
-Preset conventions it follows: dependencies in requirements.txt, the ASGI
-app is `app` in main.py, the port comes from $PORT (the preset passes it to
-uvicorn). No Dockerfile here on purpose — the preset provides it.
-"""
+"""Demo app for the bult FastAPI preset (requirements.txt, `app` in main.py, port from $PORT)."""
 
 import os
 import socket

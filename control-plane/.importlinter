@@ -1,0 +1,81 @@
+[importlinter]
+root_package = app
+include_external_packages = True
+
+[importlinter:contract:apps-independent]
+name = The apps domain knows nothing about deploys
+type = forbidden
+source_modules =
+    app.apps
+forbidden_modules =
+    app.deploys
+
+[importlinter:contract:deploys-use-apps-via-facade]
+name = Deploys reach the apps domain only through its facade and public.py
+type = forbidden
+source_modules =
+    app.deploys
+forbidden_modules =
+    app.apps.deps
+    app.apps.repositories
+    app.apps.services.apps
+    app.apps.routers
+    app.apps.schemas
+# Allowed: app.apps.services.facade (types) and app.apps.public (Depends provider).
+# deploys -> facade -> services.apps is the intended path, so indirect imports are fine.
+allow_indirect_imports = True
+
+[importlinter:contract:routers-skip-repositories]
+name = Routers never import repositories
+type = forbidden
+source_modules =
+    app.apps.routers
+    app.deploys.routers
+forbidden_modules =
+    app.apps.repositories
+    app.deploys.repositories
+# routers -> deps -> repositories is wiring, not data access.
+allow_indirect_imports = True
+
+[importlinter:contract:no-web-framework-in-core-logic]
+name = Services, repositories, errors and the event bus know nothing about FastAPI/Starlette
+type = forbidden
+source_modules =
+    app.apps.services
+    app.deploys.services
+    app.core.errors
+    app.core.events
+    app.apps.repositories
+    app.deploys.repositories
+forbidden_modules =
+    fastapi
+    starlette
+
+[importlinter:contract:handlers-wired-in-main]
+name = Event handlers of deploys are imported only by main (subscriptions live in one place)
+type = forbidden
+source_modules =
+    app.apps
+    app.agents
+    app.ingress
+    app.health
+    app.core
+    app.deploys.routers
+    app.deploys.services
+    app.deploys.deps
+    app.deploys.repositories
+    app.deploys.schemas
+forbidden_modules =
+    app.deploys.handlers
+allow_indirect_imports = True
+
+[importlinter:contract:event-bus-knows-no-domain]
+name = core.events must not import domains
+type = forbidden
+source_modules =
+    app.core.events
+forbidden_modules =
+    app.apps
+    app.deploys
+    app.agents
+    app.ingress

@@ -18,11 +18,10 @@ export function useCreateApp() {
             return { app: await createApp(values).unwrap() };
         } catch (e) {
             const error: ApiError = normalizeError(e);
-            if (error.status === 409) return { fieldErrors: { name: error.message } };
             if (error.fieldErrors && Object.keys(error.fieldErrors).length > 0) {
                 return { fieldErrors: error.fieldErrors };
             }
-            showError(error.message, 'Could not create app');
+            showError(error.message, 'Could not create app', error.traceId);
             return {};
         }
     };

@@ -26,6 +26,14 @@
     padding: 16px 20px;
 }
 
+.open {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 20px;
+    border-top: 1px solid var(--slate-2);
+}
+
 .kv {
     margin: 0;
     padding: 6px 20px 10px;

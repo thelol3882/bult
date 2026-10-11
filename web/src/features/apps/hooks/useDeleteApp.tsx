@@ -27,7 +27,8 @@ export function useDeleteApp(onDeleted?: (name: string) => void) {
                     showSuccess(`${name} was deleted`);
                     onDeleted?.(name);
                 } catch (e) {
-                    showError(normalizeError(e).message, 'Could not delete app');
+                    const error = normalizeError(e);
+                    showError(error.message, 'Could not delete app', error.traceId);
                 }
             },
         });

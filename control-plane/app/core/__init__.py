@@ -1,1 +1,1 @@
-"""TODO: settings (pydantic-settings), security (password hashing, JWT), error format."""
+"""TODO: security (password hashing, JWT)."""

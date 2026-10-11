@@ -55,7 +55,7 @@
 
 **Log data is `bytes`, not `string`.** Protobuf `string` must be valid UTF-8 and Go's marshaller rejects anything else, which would kill the stream. Build output is not guaranteed UTF-8: legacy encodings, binary noise, and — most commonly — a multi-byte character split across two fixed-size read chunks. Bytes travel untouched; the control plane decodes at the edge (`decode("utf-8", errors="replace")`) before sending text to the browser.
 
-**Stream completion (revised 2026-10-08).** The stream **always ends with a `Deploy` message** in a terminal state (`SUCCEEDED` / `FAILED` / `CANCELLED`, with `error`) and status `OK`. A status code describes the RPC itself, not the build it observes — like `GET /builds/42` answering `200` with `{"status":"failed"}`. An error status means the watch itself failed: `NOT_FOUND` (no such deploy), `INVALID_ARGUMENT` (bad id, negative offset), `INTERNAL` (log unreadable), `CANCELLED` (client left). The control plane handles every build ending through one path. *(Lesson 02 said "failure → a gRPC error status"; replaced.)*
+**Stream completion (revised 2026-10-08).** The stream **always ends with a `Deploy` message** in a terminal state (`SUCCEEDED` / `FAILED` / `CANCELLED`, with `error`) and status `OK`. A status code describes the RPC itself, not the build it observes — like `GET /builds/42` answering `200` with `{"status":"failed"}`. An error status means the watch itself failed: `NOT_FOUND` (no such deploy), `INVALID_ARGUMENT` (bad id, negative offset), `INTERNAL` (log unreadable), `CANCELLED` (client left). The control plane handles every build ending through one path.
 
 **Following the log** is polling: read to EOF, wait ~200 ms, read again. Build logs tolerate the latency, the cost is one `read` per watcher per tick, and one code path serves running, finished and pre-restart builds alike — the file is the single source. An in-memory fan-out would not survive a restart, would still need the file for offset replay, and would let a slow watcher stall the build. `inotify` is a later optimisation (even `tail -f` keeps polling as a fallback).
 
@@ -132,7 +132,7 @@ The runner only receives a reference to a ready image (`image@sha256:…`). RPCs
 
 - `RuntimeService` is written first; `BuildService` is added to `v1` later, once `DeploySpec` is actually known (YAGNI). Adding a service to a package is backward compatible.
 - Until the control plane consumes the contract, it may change freely; after that, only compatible changes (enforced by `buf breaking`).
-  - 2026-10-05: `app_id` added as field 2 of `RunReplicaRequest` and `Replica`, renumbering the fields after it — a deliberate pre-consumer change. Once the control plane is a client (lesson 15), field numbers are frozen: new fields take the next free number, and logical grouping is expressed by their position in the file, not by the number.
+  - 2026-10-05: `app_id` added as field 2 of `RunReplicaRequest` and `Replica`, renumbering the fields after it — a deliberate pre-consumer change. Now that the control plane is a client, field numbers are frozen: new fields take the next free number, and logical grouping is expressed by their position in the file, not by the number.
 
 ## IDs and idempotency
 

@@ -1,8 +1,4 @@
-// Demo app for the bult Express preset.
-//
-// Preset conventions it follows: dependencies in package.json with a lockfile,
-// entry point via `npm start` / `main`, the port comes from $PORT.
-// No Dockerfile here on purpose — the preset provides it.
+// Demo app for the bult Express preset (package.json + lockfile, `npm start`, port from $PORT).
 const express = require("express");
 const os = require("os");
 
@@ -26,6 +22,5 @@ const server = app.listen(port, "0.0.0.0", () => {
   console.log(`express-hello listening on :${port}`);
 });
 
-// Exit promptly on SIGTERM (docker stop / StopReplica) instead of waiting
-// for the 10 s grace period to end in SIGKILL.
+// Exit on SIGTERM instead of waiting for the SIGKILL grace period.
 process.on("SIGTERM", () => server.close(() => process.exit(0)));

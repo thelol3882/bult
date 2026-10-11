@@ -199,7 +199,7 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 
 // inspectReplica reads a container back from Docker and maps it to Replica:
 // IDs and image from labels, state/exit code/start time from State,
-// host port from the port bindings. ListReplicas will reuse it in lesson 06.
+// host port from the port bindings. ListReplicas will reuse it.
 func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replica, error) {
 	insRes, err := c.api.ContainerInspect(ctx, containerID, client.ContainerInspectOptions{})
 	if err != nil {

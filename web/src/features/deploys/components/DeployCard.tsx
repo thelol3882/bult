@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
-import { Alert, Card, Loader } from '@mantine/core';
-import { IconAlertCircle, IconCloudUpload } from '@tabler/icons-react';
+import { Alert, Button, Card, Loader } from '@mantine/core';
+import { IconAlertCircle, IconCloudUpload, IconExternalLink } from '@tabler/icons-react';
 import type { ApiError } from '@/shared/api';
 import { IdText, Mono, StatusBadge } from '@/shared/components';
 import { shortDigest, shortSha } from '@/shared/utils/digest';
@@ -11,9 +11,11 @@ interface DeployCardProps {
     deploy?: Deploy;
     error?: ApiError;
     isLoading: boolean;
+    /** The app's public URL as returned by the API; the open button shows only when running. */
+    appUrl?: string;
 }
 
-export function DeployCard({ deploy, error, isLoading }: DeployCardProps) {
+export function DeployCard({ deploy, error, isLoading, appUrl }: DeployCardProps) {
     return (
         <Card padding={0}>
             <div className={classes.head}>
@@ -62,6 +64,20 @@ export function DeployCard({ deploy, error, isLoading }: DeployCardProps) {
                             {deploy.host_port ? <Mono>{deploy.host_port}</Mono> : <Pending />}
                         </Row>
                     </dl>
+                    {deploy.status === 'running' && appUrl && (
+                        <div className={classes.open}>
+                            <Button
+                                component="a"
+                                href={appUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                leftSection={<IconExternalLink size={16} />}
+                            >
+                                Open app
+                            </Button>
+                            <Mono>{appUrl}</Mono>
+                        </div>
+                    )}
                     {deploy.status === 'failed' && deploy.error && (
                         <div className={classes.pad}>
                             <Alert

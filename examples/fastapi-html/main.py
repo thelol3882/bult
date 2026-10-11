@@ -1,9 +1,4 @@
-"""Demo app for the bult FastAPI preset: an HTML page that shows which
-replica answered and what the ingress passed along.
-
-Preset conventions: dependencies in requirements.txt, the ASGI app is `app`
-in main.py, the port comes from $PORT. No Dockerfile — the preset provides it.
-"""
+"""FastAPI preset demo: an HTML page showing which replica answered and what the ingress forwarded."""
 
 import html
 import os
@@ -68,7 +63,7 @@ def _uptime() -> str:
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> str:
-    # Values come from the request: escape them before putting them into HTML.
+    # Request-derived values: escape before putting into HTML.
     return PAGE.format(
         hostname=html.escape(socket.gethostname()),
         uptime=_uptime(),

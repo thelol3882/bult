@@ -1,8 +1,4 @@
-"""Control plane application factory.
-
-uvicorn runs it as `app.main:create_app --factory` (see compose.yaml):
-every call builds a fresh app — tests get their own app and their own state.
-"""
+"""Application factory: `uvicorn app.main:create_app --factory`."""
 
 import asyncio
 from contextlib import asynccontextmanager
@@ -10,23 +6,33 @@ from pathlib import Path
 
 from fastapi import FastAPI
 
-from app.api import apps, deploys, health
-from app.core.config import load_settings
+from app import health
+from app.agents.client import AgentClients
+from app.apps.events import AppDeleted
+from app.apps.repositories.apps import InMemoryAppRepository
+from app.apps.routers import apps as apps_router
+from app.core import exception_handlers
+from app.core.config import Settings
+from app.core.events import EventBus
 from app.core.logging import setup_logging
-from app.services.agent_client import AgentClients
-from app.services.apps import AppStore
-from app.services.deploys import DeployStore
-from app.services.nginx import RouteWriter
+from app.core.middleware import TraceIdMiddleware
+from app.deploys import handlers as deploys_handlers
+from app.deploys.repositories.deploys import InMemoryDeployRepository
+from app.deploys.routers import deploys as deploys_router
+from app.ingress.routes import RouteWriter
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Long-lived resources: created when the event loop exists, closed on shutdown."""
-    settings = load_settings()
+    """Create long-lived resources once the event loop exists; close them on shutdown."""
+    settings = Settings()  # pyright: ignore[reportCallIssue]
     app.state.settings = settings
-    app.state.agents = AgentClients(settings.builder_addr, settings.runner_addrs)
+    app.state.agents = AgentClients(settings.builder, settings.runners)
+    app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
+    # In-memory until PostgreSQL storage lands.
+    app.state.app_repo = InMemoryAppRepository()
+    app.state.deploy_repo = InMemoryDeployRepository()
     app.state.deploy_tasks = set()
-    app.state.routes = RouteWriter(Path(settings.ingress_dir))
     yield
 
     tasks = app.state.deploy_tasks
@@ -36,8 +42,26 @@ async def lifespan(app: FastAPI):
     await app.state.agents.close()
 
 
+def _build_event_bus(app: FastAPI) -> EventBus:
+    """Wire subscriptions; handlers read dependencies from app.state when called."""
+    bus = EventBus()
+
+    async def on_app_deleted(event: AppDeleted) -> None:
+        state = app.state
+        await deploys_handlers.on_app_deleted(
+            event,
+            repo=state.deploy_repo,
+            agents=state.agents,
+            routes=state.routes,
+            runner_addrs=state.settings.runners,
+        )
+
+    bus.subscribe(AppDeleted, on_app_deleted)
+    return bus
+
+
 def create_app() -> FastAPI:
-    """Build the FastAPI application with all routers and shared state."""
+    """Build the app with routers, error handling and middleware."""
     setup_logging()
     app = FastAPI(
         title="Control Plane",
@@ -45,11 +69,13 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.state.app_store = AppStore()
-    app.state.deploy_store = DeployStore()
+    app.state.event_bus = _build_event_bus(app)
+
+    app.add_middleware(TraceIdMiddleware)
+    exception_handlers.register(app)
 
     app.include_router(health.router)
-    app.include_router(apps.router)
-    app.include_router(deploys.router)
+    app.include_router(apps_router.router)
+    app.include_router(deploys_router.router)
 
     return app

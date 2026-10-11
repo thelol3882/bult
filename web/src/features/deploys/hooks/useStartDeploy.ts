@@ -12,7 +12,8 @@ export function useStartDeploy() {
         try {
             return (await start(name).unwrap()).id;
         } catch (e) {
-            showError(normalizeError(e).message, 'Deploy failed to start');
+            const error = normalizeError(e);
+            showError(error.message, 'Deploy failed to start', error.traceId);
             return null;
         }
     };

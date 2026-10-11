@@ -6,12 +6,14 @@ dependencies = [
     "fastapi>=0.143.0",
     "grpcio>=1.84.0",
     "protobuf>=6.33.3",
+    "pydantic-settings>=2.15.0",
     "uvicorn[standard]>=0.54.0",
 ]
 
 [dependency-groups]
 dev = [
     "httpx2>=2.13.1",
+    "import-linter>=2.15",
     "pytest>=9.1.1",
 ]
 
@@ -19,7 +21,7 @@ dev = [
 # Make the `app` package importable however pytest is started
 # (`uv run pytest` from control-plane/, from the repo root, or from an IDE).
 pythonpath = [".", "gen"]
-testpaths = ["tests"]
+testpaths = ["tests", "app"]  # domain tests live in app/<domain>/tests/
 
 [tool.basedpyright]
 extraPaths = ["gen"]

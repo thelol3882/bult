@@ -96,6 +96,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                         deploy={polling.deploy}
                         error={polling.error}
                         isLoading={polling.isLoading}
+                        appUrl={app.url}
                     />
                 ) : (
                     <EmptyState
