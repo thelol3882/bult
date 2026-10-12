@@ -28,6 +28,8 @@ import platform
 import shutil
 import subprocess
 import sys
+import time
+import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -56,6 +58,10 @@ def host_goarch() -> str:
 
 NODES = os.environ.get("BULT_NODES", "bult-node-1 bult-node-2 bult-builder").split()
 BUILDER_NODE = os.environ.get("BULT_BUILDER_NODE", "bult-builder")
+# The VMs a demo needs: the builder and the runner(s) configured in control-plane/compose.yaml.
+DEMO_NODES = os.environ.get("BULT_DEMO_NODES", "bult-node-1 bult-builder").split()
+# Volumes `demo-down --wipe` removes: platform state only (registry images and Go caches stay).
+STATE_VOLUMES = ("bult_postgres-data", "bult_ingress-routes")
 REGISTRY = os.environ.get("BULT_REGISTRY", "192.168.252.1:5050")
 GOARCH = os.environ.get("BULT_GOARCH") or host_goarch()
 
@@ -230,6 +236,56 @@ def cmd_down(_: argparse.Namespace) -> None:
     run(["docker", "compose", "stop"], cwd=ROOT)
 
 
+def wait_http(url: str, timeout: float) -> bool:
+    """Poll a URL until it answers 2xx or the timeout runs out."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            with urllib.request.urlopen(url, timeout=3) as resp:
+                if 200 <= resp.status < 300:
+                    return True
+        except OSError:
+            pass
+        time.sleep(2)
+    return False
+
+
+def cmd_demo_up(_: argparse.Namespace) -> None:
+    """Start everything for a demo: node VMs, agents, the host stack; wait until it answers."""
+    run(["multipass", "start", *DEMO_NODES])
+    for node in DEMO_NODES:
+        node_sh(node, "systemctl is-active --quiet bultd || systemctl restart bultd")
+        print(f"   {node}: bultd active")
+    run(["docker", "compose", "up", "-d", "--build"], cwd=ROOT)
+    checks = {"API": "http://localhost:8000/healthz", "dashboard": "http://localhost:3000/"}
+    for name, url in checks.items():
+        print(f"waiting for the {name}…", flush=True)
+        if not wait_http(url, timeout=240):
+            sys.exit(f"{name} did not come up: docker compose logs {'api' if name == 'API' else 'web'}")
+    print("\nready:")
+    print("  dashboard  http://localhost:3000")
+    print("  API docs   http://localhost:8000/docs")
+    print("  apps       http://<name>.bult.localhost")
+
+
+def cmd_demo_down(args: argparse.Namespace) -> None:
+    """Stop everything after a demo: app replicas, the host stack, node VMs (--wipe: forget all state)."""
+    for node in running_nodes():
+        if node == BUILDER_NODE:
+            continue
+        node_sh(node, "ids=$(docker ps -aq --filter label=bult.managed=true); "
+                      '[ -z "$ids" ] || docker rm -f $ids')
+        print(f"   {node}: app replicas removed")
+    if args.wipe:
+        run(["docker", "compose", "down"], cwd=ROOT)
+        for volume in STATE_VOLUMES:
+            run(["docker", "volume", "rm", "-f", volume])
+        print("platform state wiped (apps, deploys, routes); registry images kept")
+    else:
+        run(["docker", "compose", "stop"], cwd=ROOT)
+    run(["multipass", "stop", *DEMO_NODES])
+
+
 COMMANDS = {
     "proto": cmd_proto,
     "proto-breaking": cmd_proto_breaking,
@@ -244,6 +300,8 @@ COMMANDS = {
     "nodes": cmd_nodes,
     "up": cmd_up,
     "down": cmd_down,
+    "demo-up": cmd_demo_up,
+    "demo-down": cmd_demo_down,
 }
 
 
@@ -252,6 +310,9 @@ def main() -> None:
     sub = parser.add_subparsers(dest="command", required=True, metavar="<command>")
     for name, func in COMMANDS.items():
         p = sub.add_parser(name, help=(func.__doc__ or "").strip().splitlines()[0])
+        if name == "demo-down":
+            p.add_argument("--wipe", action="store_true",
+                           help="also delete apps, deploys and routes (fresh start)")
         if name == "agent-logs":
             p.add_argument("node", help="node VM name, e.g. bult-builder")
             p.add_argument("-n", "--lines", type=int, default=50)
