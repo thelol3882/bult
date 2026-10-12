@@ -138,10 +138,13 @@ class DeployService:
             return deploy
 
     async def remove_app(self, app_name: str) -> None:
-        """Forget the app's deploys, drop its routes, remove its replicas (failures are logged)."""
+        """Drop the app's routes and remove its replicas (failures are logged).
+
+        Replicas are found by asking the nodes, not from deploy rows: the FK
+        cascade has already deleted the rows when the app row was deleted.
+        """
         async with self._uow_factory() as uow:
-            gone = [d for d in await uow.deploys.list_all() if d.app_name == app_name]
-            await uow.deploys.delete_for_app(app_name)
+            await uow.deploys.delete_for_app(app_name)  # no-op after the cascade
             await uow.commit()
 
         # Routes first: stop sending traffic, then remove the replicas.
@@ -157,19 +160,32 @@ class DeployService:
             except (RouteApplyError, TimeoutError) as e:
                 logger.warning("delete %s: route update failed: %r", app_name, e)
 
+        found = 0
         removed = 0
-        for deploy in gone:
-            if deploy.status != "running" or not deploy.node:
+        for node in self._agents.runner_names:
+            try:
+                replicas = await self._agents.list_replicas(node)
+            except Exception:
+                logger.warning(
+                    "delete %s: could not list replicas on %s",
+                    app_name,
+                    node,
+                    exc_info=True,
+                )
                 continue
-            if await remove_replica_quietly(
-                self._agents, deploy.node, f"{deploy.id}-r0"
-            ):
-                removed += 1
+            for replica in replicas:
+                if replica.app_id != app_name:
+                    continue
+                found += 1
+                if await remove_replica_quietly(
+                    self._agents, node, replica.replica_id
+                ):
+                    removed += 1
 
         logger.info(
-            "app %s deleted: %d deploys, %d replicas removed, route generation %s",
+            "app %s deleted: %d replicas found, %d removed, route generation %s",
             app_name,
-            len(gone),
+            found,
             removed,
             gen if gen is not None else "-",
         )

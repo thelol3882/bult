@@ -7,7 +7,7 @@ from typing import Any
 import grpc
 from grpc.aio import AioRpcError
 
-from app.agents.client import DeployResult, ReplicaResult
+from app.agents.client import DeployResult, ReplicaInfo, ReplicaResult
 from app.ingress.routes import Route, RouteWriter
 
 COMMIT_SHA = "0123abc"
@@ -63,6 +63,17 @@ class FakeAgentClients:
         self.get_calls = 0
         self.run_calls: list[dict[str, Any]] = []
         self.remove_calls: list[dict[str, Any]] = []
+        self.list_error: AioRpcError | None = None
+        # What the "nodes" run: node -> replica_id -> replica.
+        self.replicas: dict[str, dict[str, ReplicaInfo]] = {}
+
+    def seed_replica(
+        self, replica_id: str, app_id: str, node: str = "node-a", port: int = HOST_PORT
+    ) -> None:
+        """A replica already running on a node (as if left by an earlier deploy)."""
+        self.replicas.setdefault(node, {})[replica_id] = ReplicaInfo(
+            replica_id, app_id, port, "RUNNING"
+        )
 
     @property
     def runner_names(self) -> list[str]:
@@ -102,12 +113,19 @@ class FakeAgentClients:
             raise self.run_error
         if self.on_run is not None:
             await self.on_run()
+        self.seed_replica(replica_id, kwargs["app_id"], node, HOST_PORT)
         return ReplicaResult(replica_id=replica_id, node=node, host_port=HOST_PORT)
 
     async def remove_replica(self, node: str, replica_id: str) -> None:
         self.remove_calls.append({"node": node, "replica_id": replica_id})
         if self.remove_error is not None:
             raise self.remove_error
+        self.replicas.get(node, {}).pop(replica_id, None)
+
+    async def list_replicas(self, node: str) -> list[ReplicaInfo]:
+        if self.list_error is not None:
+            raise self.list_error
+        return list(self.replicas.get(node, {}).values())
 
     async def close(self) -> None:
         pass

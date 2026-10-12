@@ -10,6 +10,7 @@ START_DEPLOY_TIMEOUT = 10
 GET_DEPLOY_TIMEOUT = 10
 RUN_REPLICA_TIMEOUT = 300  # includes pulling the image on the node
 REMOVE_REPLICA_TIMEOUT = 30
+LIST_REPLICAS_TIMEOUT = 10
 
 # HTTP/2 keepalive: a silently dead node becomes UNAVAILABLE instead of hanging.
 CHANNEL_OPTIONS: list[tuple[str, int]] = [
@@ -41,6 +42,16 @@ class ReplicaResult:
     replica_id: str
     node: str
     host_port: int
+
+
+@dataclass(frozen=True)
+class ReplicaInfo:
+    """A replica as a node reports it (ListReplicas)."""
+
+    replica_id: str
+    app_id: str
+    host_port: int
+    state: str  # ReplicaState without the prefix, e.g. "RUNNING"
 
 
 class UnknownNodeError(Exception):
@@ -148,11 +159,38 @@ class AgentClients:
             timeout=REMOVE_REPLICA_TIMEOUT,
         )
 
+    async def list_replicas(self, node: str) -> list[ReplicaInfo]:
+        """ListReplicas on one runner: every bult-managed replica, any app."""
+        stub = self._runners.get(node)
+        if stub is None:
+            raise UnknownNodeError(node)
+        response = await stub.ListReplicas(
+            agent_pb2.ListReplicasRequest(), timeout=LIST_REPLICAS_TIMEOUT
+        )
+        return [
+            ReplicaInfo(
+                replica_id=r.replica_id,
+                app_id=r.app_id,
+                host_port=r.host_port,
+                state=_replica_state(r.state),
+            )
+            for r in response.replicas
+        ]
+
     async def close(self) -> None:
         """Close every channel."""
         await self._builder_channel.close()
         for channel in self._runner_channels.values():
             await channel.close()
+
+
+def _replica_state(state: int) -> str:
+    """protobuf ReplicaState -> name without the prefix."""
+    try:
+        name = agent_pb2.ReplicaState.Name(state)
+    except ValueError:
+        return f"UNKNOWN_{state}"
+    return name.removeprefix("REPLICA_STATE_")
 
 
 def _deploy_result(deploy: agent_pb2.Deploy) -> DeployResult:
@@ -205,3 +243,5 @@ class Agents(Protocol):
     ) -> ReplicaResult: ...
 
     async def remove_replica(self, *, node: str, replica_id: str) -> None: ...
+
+    async def list_replicas(self, node: str) -> list[ReplicaInfo]: ...

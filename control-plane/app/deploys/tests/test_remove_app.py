@@ -41,6 +41,8 @@ def test_remove_app_drops_deploys_reapplies_routes_and_removes_replica(
     async def scenario() -> None:
         await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
         await deploys_uow.deploys.add(_running("d-shop", "shop", 30002))
+        agents.seed_replica("d-blog-r0", "blog")
+        agents.seed_replica("d-shop-r0", "shop")
         await _service(deploys_uow, agents, routes, settings).remove_app("blog")
         assert await deploys_uow.deploys.get("d-blog") is None
         assert await deploys_uow.deploys.get("d-shop") is not None

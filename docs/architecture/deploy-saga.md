@@ -44,7 +44,7 @@ Today the saga state lives only in the memory of the `run_deploy` task: if the c
 
 Deleting an app is also a saga across the same resources: the app's data, its routes, its replicas on the nodes. The order matters: a step that cannot be undone, or that would leave users facing a broken address, must come as late as possible. The intended order is not decided yet.
 
-The place where the compensations run is the `AppDeleted` handler (`app/deploys/handlers.py: on_app_deleted`): `AppService.delete` removes the app and publishes the event; the handler, delivered synchronously after commit and before the 204, forgets the app's deploys, re-applies the routes without it, then removes the replicas of running deploys on their nodes (route update and `RemoveReplica` are best effort and logged). A deploy still in flight notices on its own that its row is gone and removes its replica itself (see `runner.py`).
+The place where the compensations run is the `AppDeleted` handler (`app/deploys/handlers.py: on_app_deleted`): `AppService.delete` removes the app and publishes the event; the handler, delivered synchronously after commit and before the 204, forgets the app's deploys, re-applies the routes without it, then removes the app's replicas (route update and `RemoveReplica` are best effort and logged). The replicas are found by asking every runner node (`ListReplicas`, filtered by `app_id`), not from deploy rows: the `ON DELETE CASCADE` foreign key has already removed the rows at commit. This also removes superseded replicas left by earlier redeploys; a node that cannot be reached is logged and skipped. A deploy still in flight notices on its own that its row is gone and removes its replica itself (see `runner.py`).
 
 ## Why not a distributed transaction
 
