@@ -1,8 +1,12 @@
-"""App storage behind a Protocol (in-memory until PostgreSQL storage lands)."""
+"""App storage behind a Protocol."""
 
+import dataclasses
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Protocol
+from uuid import UUID
+
+from uuid_utils.compat import uuid7
 
 
 @dataclass(frozen=True)
@@ -14,16 +18,17 @@ class App:
     repo_url: str
     branch: str
     subdir: str
-    created_at: datetime
+    id: UUID | None = None
+    created_at: datetime | None = None
 
 
 class AppRepository(Protocol):
     """Storage only; domain rules live in AppService."""
 
-    def add(self, app: App) -> None: ...
-    def get(self, name: str) -> App | None: ...
-    def list(self) -> list[App]: ...
-    def delete(self, name: str) -> bool:
+    async def add(self, app: App) -> App: ...
+    async def get(self, name: str) -> App | None: ...
+    async def list(self) -> list[App]: ...
+    async def delete(self, name: str) -> bool:
         """True if the app existed."""
         ...
 
@@ -34,14 +39,16 @@ class InMemoryAppRepository:
     def __init__(self) -> None:
         self._apps: dict[str, App] = {}
 
-    def add(self, app: App) -> None:
+    async def add(self, app: App) -> App:
+        app = dataclasses.replace(app, id=uuid7(), created_at=datetime.now(UTC))
         self._apps[app.name] = app
+        return app
 
-    def get(self, name: str) -> App | None:
+    async def get(self, name: str) -> App | None:
         return self._apps.get(name)
 
-    def list(self) -> list[App]:
+    async def list(self) -> list[App]:
         return sorted(self._apps.values(), key=lambda a: a.name)
 
-    def delete(self, name: str) -> bool:
+    async def delete(self, name: str) -> bool:
         return self._apps.pop(name, None) is not None

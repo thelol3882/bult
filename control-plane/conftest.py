@@ -7,14 +7,16 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from app.apps.deps import get_app_repo
-from app.apps.repositories.apps import InMemoryAppRepository
+from app.apps.deps import get_apps_uow_factory
+from app.apps.uow import InMemoryAppsUoW
 from app.core.config import Settings
 from app.core.deps import get_agents, get_routes, get_settings
-from app.deploys.deps import get_deploy_repo
-from app.deploys.repositories.deploys import InMemoryDeployRepository
+from app.deploys.deps import get_deploys_uow_factory
+from app.deploys.uow import InMemoryDeploysUoW
 from app.main import create_app
 from tests.fakes import DOMAIN, RUNNERS, TRUSTED_PROXY, FakeAgentClients, FakeRoutes
+
+TEST_DATABASE_URL = "postgresql+asyncpg://test/test"
 
 
 @pytest.fixture
@@ -29,17 +31,19 @@ def settings(tmp_path: Path) -> Settings:
         runners=RUNNERS,
         trusted_proxy=TRUSTED_PROXY,
         ingress_dir=str(tmp_path / "routes"),
+        database_url=TEST_DATABASE_URL,
     )
 
 
 @pytest.fixture
-def app_repo() -> InMemoryAppRepository:
-    return InMemoryAppRepository()
+def apps_uow() -> InMemoryAppsUoW:
+    """One fake per test: every 'transaction' sees what the previous one wrote."""
+    return InMemoryAppsUoW()
 
 
 @pytest.fixture
-def deploy_repo() -> InMemoryDeployRepository:
-    return InMemoryDeployRepository()
+def deploys_uow() -> InMemoryDeploysUoW:
+    return InMemoryDeploysUoW()
 
 
 @pytest.fixture
@@ -52,8 +56,8 @@ def agents() -> FakeAgentClients:
 def app(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    app_repo: InMemoryAppRepository,
-    deploy_repo: InMemoryDeployRepository,
+    apps_uow: InMemoryAppsUoW,
+    deploys_uow: InMemoryDeploysUoW,
     routes: FakeRoutes,
     settings: Settings,
     agents: FakeAgentClients,
@@ -63,18 +67,25 @@ def app(
     monkeypatch.setenv("BULT_RUNNERS", "node-a=runner:50051")
     monkeypatch.setenv("BULT_TRUSTED_PROXY", TRUSTED_PROXY)
     monkeypatch.setenv("BULT_INGRESS_DIR", str(tmp_path / "lifespan-routes"))
+    monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
+
+    def apps_uow_factory() -> InMemoryAppsUoW:
+        return apps_uow
+
+    def deploys_uow_factory() -> InMemoryDeploysUoW:
+        return deploys_uow
 
     application = create_app()
-    # The single place tests configure collaborators. Event handlers read app.state;
-    # the overrides keep the same objects when a test runs the lifespan (it would replace the state).
-    application.state.app_repo = app_repo
-    application.state.deploy_repo = deploy_repo
+    application.state.apps_uow_factory = apps_uow_factory
+    application.state.deploys_uow_factory = deploys_uow_factory
     application.state.deploy_tasks = set()
     application.state.agents = agents
     application.state.routes = routes
     application.state.settings = settings
-    application.dependency_overrides[get_app_repo] = lambda: app_repo
-    application.dependency_overrides[get_deploy_repo] = lambda: deploy_repo
+    application.dependency_overrides[get_apps_uow_factory] = lambda: apps_uow_factory
+    application.dependency_overrides[get_deploys_uow_factory] = lambda: (
+        deploys_uow_factory
+    )
     application.dependency_overrides[get_routes] = lambda: routes
     application.dependency_overrides[get_settings] = lambda: settings
     application.dependency_overrides[get_agents] = lambda: agents

@@ -2,12 +2,13 @@
 
 import asyncio
 import logging
+from collections.abc import Callable
 
 import grpc
 
 from app.agents.client import Agents, DeployResult, ReplicaResult
-from app.deploys.repositories.deploys import DeployRepository
 from app.deploys.services.scheduler import pick_runner
+from app.deploys.uow import DeploysUoW
 from app.ingress.routes import (
     Route,
     RouteApplyError,
@@ -38,7 +39,7 @@ _USER_MESSAGES = {
 
 async def run_deploy(
     agents: Agents,
-    repo: DeployRepository,
+    uow_factory: Callable[[], DeploysUoW],
     routes: RouteWriter,
     runner_addrs: dict[str, str],
     deploy_id: str,
@@ -48,6 +49,8 @@ async def run_deploy(
 ) -> None:
     """Drive one deploy to `running` or `failed`; never raises (except cancellation).
 
+    Every write is its own short UoW; gRPC calls, polling sleeps and route waits run outside any UoW.
+
     trusted_proxy becomes FORWARDED_ALLOW_IPS; poll_interval is a parameter so tests don't sleep.
     """
     stage = "build"
@@ -56,26 +59,22 @@ async def run_deploy(
         result = await _wait_for_build(agents, deploy_id, poll_interval)
 
         if result.state != "SUCCEEDED":
-            if (
-                repo.update(
-                    deploy_id,
-                    status="failed",
-                    error=result.error or f"build {result.state.lower()}",
-                )
-                is None
+            if not await _update(
+                uow_factory,
+                deploy_id,
+                status="failed",
+                error=result.error or f"build {result.state.lower()}",
             ):
                 _log_cancelled(deploy_id)
             return
 
         image = f"{result.image_repository}@{result.image_digest}"
-        if (
-            repo.update(
-                deploy_id,
-                status="starting",
-                commit_sha=result.commit_sha,
-                image=image,
-            )
-            is None
+        if not await _update(
+            uow_factory,
+            deploy_id,
+            status="starting",
+            commit_sha=result.commit_sha,
+            image=image,
         ):
             _log_cancelled(deploy_id)
             return
@@ -103,21 +102,23 @@ async def run_deploy(
         )
         compensate = False  # the route was not published: undo RunReplica below
         async with routes.lock:
-            if repo.get(deploy_id) is None:
+            async with uow_factory() as uow:  # released before apply/wait_applied
+                still_there = await uow.deploys.get(deploy_id) is not None
+                deploys = await uow.deploys.list_all()
+            if not still_there:
                 # The app was deleted while the replica was starting: don't publish.
                 _log_cancelled(deploy_id)
                 compensate = True
             else:
-                desired = running_routes(
-                    repo.list_all(), runner_addrs, skip_app=app_name
-                )
+                desired = running_routes(deploys, runner_addrs, skip_app=app_name)
                 desired.append(this_route)
                 try:
                     gen = routes.apply(desired)
                     await routes.wait_applied(gen)
                 except (RouteApplyError, TimeoutError) as e:
                     logger.warning("deploy %s: route failed: %r", deploy_id, e)
-                    repo.update(
+                    await _update(
+                        uow_factory,
                         deploy_id,
                         status="failed",
                         error="route failed: could not publish the app's address",
@@ -129,14 +130,12 @@ async def run_deploy(
             await _remove_replica(agents, replica)
             return
 
-        if (
-            repo.update(
-                deploy_id,
-                status="running",
-                node=replica.node,
-                host_port=replica.host_port,
-            )
-            is None
+        if not await _update(
+            uow_factory,
+            deploy_id,
+            status="running",
+            node=replica.node,
+            host_port=replica.host_port,
         ):
             # Deleted during wait_applied: the AppDeleted handler re-applies the routes after us.
             _log_cancelled(deploy_id)
@@ -151,15 +150,31 @@ async def run_deploy(
             "deploy %s: %s failed: %s %s", deploy_id, stage, e.code().name, e.details()
         )
         reason = _USER_MESSAGES.get(e.code(), "internal error")
-        repo.update(deploy_id, status="failed", error=f"{stage} failed: {reason}")
+        await _update(
+            uow_factory, deploy_id, status="failed", error=f"{stage} failed: {reason}"
+        )
         await _remove_replica(agents, replica)
 
     except Exception:
         logger.exception("deploy %s: unexpected error during %s", deploy_id, stage)
-        repo.update(
-            deploy_id, status="failed", error=f"{stage} failed: internal error"
+        await _update(
+            uow_factory,
+            deploy_id,
+            status="failed",
+            error=f"{stage} failed: internal error",
         )
         await _remove_replica(agents, replica)
+
+
+async def _update(
+    uow_factory: Callable[[], DeploysUoW], deploy_id: str, **changes
+) -> bool:
+    """One write step in its own UoW; False if the deploy is gone."""
+    async with uow_factory() as uow:
+        if await uow.deploys.update(deploy_id, **changes) is None:
+            return False
+        await uow.commit()
+        return True
 
 
 def _log_cancelled(deploy_id: str) -> None:

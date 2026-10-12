@@ -36,7 +36,6 @@ This is the same model as ingress-nginx in Kubernetes or consul-template: the ag
 
 ## Limitations
 
-- Until PostgreSQL storage lands the API keeps apps and deploys in memory: after an API restart the desired state is empty, and the next apply removes every route. The platform forgets everything consistently.
 - One ingress instance; no TLS (`*.bult.localhost` is plain HTTP in the dev setup).
 - Up to ~1 s of propagation delay (polling).
 - The sidecar runs in the background of the ingress container without supervision: if it dies, nginx keeps serving the last applied routes but new versions are never applied, and the API times out waiting for `status.json`. A supervisor (s6, supervisord) or a separate container with a health check would fix it.

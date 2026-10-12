@@ -1,26 +1,30 @@
 """Depends wiring of the apps domain."""
 
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
 
-from app.apps.repositories.apps import AppRepository
 from app.apps.services.apps import AppService
+from app.apps.uow import AppsUoW
 from app.core.deps import EventCollectorDep, SettingsDep
 
 
-def get_app_repo(request: Request) -> AppRepository:
-    """The app repository."""
-    return request.app.state.app_repo
+def get_apps_uow_factory(request: Request) -> Callable[[], AppsUoW]:
+    return request.app.state.apps_uow_factory
 
 
-AppRepoDep = Annotated[AppRepository, Depends(get_app_repo)]
+AppUoWDep = Annotated[Callable[[], AppsUoW], Depends(get_apps_uow_factory)]
 
 
 def get_app_service(
-    repo: AppRepoDep, settings: SettingsDep, events: EventCollectorDep
+    app_uow: AppUoWDep, settings: SettingsDep, events: EventCollectorDep
 ) -> AppService:
-    return AppService(repo, settings, events)
+    return AppService(
+        uow_factory=app_uow,
+        settings=settings,
+        events=events,
+    )
 
 
 AppServiceDep = Annotated[AppService, Depends(get_app_service)]

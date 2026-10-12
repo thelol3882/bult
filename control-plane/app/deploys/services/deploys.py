@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from functools import lru_cache
 from pathlib import Path
 
@@ -13,8 +14,9 @@ from app.apps.services.facade import AppsFacade
 from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import InternalError, NotFoundError, ServiceUnavailableError
-from app.deploys.repositories.deploys import Deploy, DeployRepository
+from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.runner import remove_replica_quietly, run_deploy
+from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter, running_routes
 
 logger = logging.getLogger(__name__)
@@ -56,14 +58,14 @@ def _dockerfile(preset: str) -> str:
 class DeployService:
     def __init__(
         self,
-        repo: DeployRepository,
+        uow_factory: Callable[[], DeploysUoW],
         apps: AppsFacade,
         agents: Agents,
         routes: RouteWriter,
         settings: Settings,
         tasks: set[asyncio.Task[None]],
     ) -> None:
-        self._repo = repo
+        self._uow_factory = uow_factory
         self._apps = apps
         self._agents = agents
         self._routes = routes
@@ -72,7 +74,7 @@ class DeployService:
 
     async def start(self, app_name: str) -> Deploy:
         """Start the build on the builder, then run the rest in a background task."""
-        app = self._apps.get_app(app_name)
+        app = await self._apps.get_app(app_name)
 
         # The id is generated before the call so a retry reaches the same job.
         deploy_id = uuid.uuid4().hex
@@ -106,12 +108,14 @@ class DeployService:
                 logger.error("StartDeploy %s: %s %s", deploy_id, code.name, e.details())
                 raise DeployRejectedError() from None
 
-        deploy = self._repo.add(Deploy(id=deploy_id, app_name=app.name))
+        async with self._uow_factory() as uow:
+            deploy = await uow.deploys.add(Deploy(id=deploy_id, app_name=app.name))
+            await uow.commit()
 
         task = asyncio.create_task(
             run_deploy(
                 self._agents,
-                self._repo,
+                self._uow_factory,
                 self._routes,
                 self._settings.runners,
                 deploy_id,
@@ -125,23 +129,28 @@ class DeployService:
 
         return deploy
 
-    def get(self, app_name: str, deploy_id: str) -> Deploy:
+    async def get(self, app_name: str, deploy_id: str) -> Deploy:
         """DeployNotFoundError if missing OR if it belongs to another app."""
-        deploy = self._repo.get(deploy_id)
-        if deploy is None or deploy.app_name != app_name:
-            raise DeployNotFoundError(deploy_id)
-        return deploy
+        async with self._uow_factory() as uow:
+            deploy = await uow.deploys.get(deploy_id)
+            if deploy is None or deploy.app_name != app_name:
+                raise DeployNotFoundError(deploy_id)
+            return deploy
 
     async def remove_app(self, app_name: str) -> None:
         """Forget the app's deploys, drop its routes, remove its replicas (failures are logged)."""
-        gone = [d for d in self._repo.list_all() if d.app_name == app_name]
-        self._repo.delete_for_app(app_name)
+        async with self._uow_factory() as uow:
+            gone = [d for d in await uow.deploys.list_all() if d.app_name == app_name]
+            await uow.deploys.delete_for_app(app_name)
+            await uow.commit()
 
         # Routes first: stop sending traffic, then remove the replicas.
         # Always re-applied: a deploy in flight may have published this app's route already.
         gen: int | None = None
         async with self._routes.lock:
-            desired = running_routes(self._repo.list_all(), self._settings.runners)
+            async with self._uow_factory() as uow:
+                deploys = await uow.deploys.list_all()
+            desired = running_routes(deploys, self._settings.runners)
             try:
                 gen = self._routes.apply(desired)
                 await self._routes.wait_applied(gen)

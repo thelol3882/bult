@@ -15,4 +15,4 @@ async def start_deploy(name: str, service: DeployServiceDep) -> DeployOut:
 
 @router.get("/{deploy_id}", response_model=DeployOut)
 async def get_deploy(name: str, deploy_id: str, service: DeployServiceDep) -> DeployOut:
-    return DeployOut.model_validate(service.get(name, deploy_id))
+    return DeployOut.model_validate(await service.get(name, deploy_id))

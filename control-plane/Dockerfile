@@ -18,6 +18,8 @@ RUN uv sync --locked --no-install-project --no-dev --no-cache
 COPY app ./app
 COPY gen ./gen
 COPY presets ./presets
+COPY migrations ./migrations
+COPY alembic.ini .
 
 ENV PYTHONPATH=/app/gen
 

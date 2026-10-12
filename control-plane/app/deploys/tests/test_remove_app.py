@@ -7,8 +7,9 @@ from app.apps.events import AppDeleted
 from app.apps.services.facade import AppsFacade
 from app.core.config import Settings
 from app.deploys.handlers import on_app_deleted
-from app.deploys.repositories.deploys import Deploy, InMemoryDeployRepository
+from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.deploys import DeployService
+from app.deploys.uow import InMemoryDeploysUoW
 from app.ingress.routes import Route
 from tests.fakes import FakeAgentClients, FakeRoutes
 
@@ -20,30 +21,34 @@ def _running(deploy_id: str, app_name: str, port: int) -> Deploy:
 
 
 def _service(
-    repo: InMemoryDeployRepository,
+    uow: InMemoryDeploysUoW,
     agents: FakeAgentClients,
     routes: FakeRoutes,
     settings: Settings,
 ) -> DeployService:
     # apps is unused by remove_app.
     return DeployService(
-        repo, cast(AppsFacade, None), agents, routes, settings, set()
+        lambda: uow, cast(AppsFacade, None), agents, routes, settings, set()
     )
 
 
 def test_remove_app_drops_deploys_reapplies_routes_and_removes_replica(
-    deploy_repo: InMemoryDeployRepository,
+    deploys_uow: InMemoryDeploysUoW,
     agents: FakeAgentClients,
     routes: FakeRoutes,
     settings: Settings,
 ):
-    deploy_repo.add(_running("d-blog", "blog", 30001))
-    deploy_repo.add(_running("d-shop", "shop", 30002))
+    async def scenario() -> None:
+        await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
+        await deploys_uow.deploys.add(_running("d-shop", "shop", 30002))
+        await _service(deploys_uow, agents, routes, settings).remove_app("blog")
+        assert await deploys_uow.deploys.get("d-blog") is None
+        assert await deploys_uow.deploys.get("d-shop") is not None
 
-    asyncio.run(_service(deploy_repo, agents, routes, settings).remove_app("blog"))
-
-    assert deploy_repo.get("d-blog") is None
-    assert deploy_repo.get("d-shop") is not None
+    asyncio.run(scenario())
+    assert (
+        deploys_uow.commits == 1
+    )  # the delete is committed before routes/replicas are touched
     assert routes.applied[-1] == [Route("shop", "10.0.0.5", 30002)]
     assert agents.remove_calls == [{"node": "node-a", "replica_id": "d-blog-r0"}]
 

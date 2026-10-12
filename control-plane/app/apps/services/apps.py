@@ -1,71 +1,60 @@
 """Apps domain rules and errors."""
 
-from datetime import UTC, datetime
+from collections.abc import Callable
 
+from app.apps.errors import AppNameTakenError, AppNotFoundError
 from app.apps.events import AppDeleted
-from app.apps.repositories.apps import App, AppRepository
+from app.apps.repositories.apps import App
 from app.apps.schemas.apps import AppCreate
+from app.apps.uow import AppsUoW
 from app.core.config import Settings
-from app.core.error_codes import ErrorCode
-from app.core.errors import ConflictError, NotFoundError
 from app.core.events import EventPublisher
-
-
-class AppNameTakenError(ConflictError):
-    """An app with this name already exists."""
-
-    code = ErrorCode.APP_NAME_TAKEN
-
-    def __init__(self, name: str) -> None:
-        super().__init__(f"App with name '{name}' already exists.", field="name")
-
-
-class AppNotFoundError(NotFoundError):
-    """No app with this name."""
-
-    code = ErrorCode.APP_NOT_FOUND
-
-    def __init__(self, name: str) -> None:
-        super().__init__(f"App '{name}' not found.")
 
 
 class AppService:
     def __init__(
-        self, repo: AppRepository, settings: Settings, events: EventPublisher
+        self,
+        uow_factory: Callable[[], AppsUoW],
+        events: EventPublisher,
+        settings: Settings,
     ) -> None:
-        self._repo = repo
-        self._settings = settings
+        self._uow_factory = uow_factory
         self._events = events
+        self._settings = settings
 
-    def create(self, data: AppCreate) -> App:
-        if self._repo.get(data.name) is not None:
-            raise AppNameTakenError(data.name)
+    async def create(self, data: AppCreate) -> App:
+        async with self._uow_factory() as uow:
+            if await uow.apps.get(data.name) is not None:
+                raise AppNameTakenError(data.name)
+            app = App(
+                name=data.name,
+                preset=data.preset,
+                repo_url=str(data.repo_url),
+                branch=data.branch,
+                subdir=data.subdir,
+            )
+            app = await uow.apps.add(app)
+            await uow.commit()
+            return app
 
-        app = App(
-            name=data.name,
-            preset=data.preset,
-            repo_url=str(data.repo_url),
-            branch=data.branch,
-            subdir=data.subdir,
-            created_at=datetime.now(UTC),
-        )
-        self._repo.add(app)
-        return app
+    async def get(self, name: str) -> App:
+        async with self._uow_factory() as uow:
+            app = await uow.apps.get(name)
+            if app is None:
+                raise AppNotFoundError(name)
+            return app
 
-    def get(self, name: str) -> App:
-        app = self._repo.get(name)
-        if app is None:
-            raise AppNotFoundError(name)
-        return app
+    async def list(self) -> list[App]:
+        async with self._uow_factory() as uow:
+            return await uow.apps.list()
 
-    def list(self) -> list[App]:
-        return self._repo.list()
-
-    def delete(self, name: str) -> None:
+    async def delete(self, name: str) -> None:
         """Delete the app; subscribers of AppDeleted clean up the rest."""
-        if not self._repo.delete(name):
-            raise AppNotFoundError(name)
-        self._events.publish(AppDeleted(name))
+        async with self._uow_factory() as uow:
+            if not await uow.apps.delete(name):
+                raise AppNotFoundError(name)
+            await uow.commit()
+            self._events.publish(AppDeleted(name))
 
     def url(self, app: App) -> str:
         """Public address of the app."""

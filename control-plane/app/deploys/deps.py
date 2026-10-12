@@ -1,6 +1,7 @@
 """Depends wiring of the deploys domain."""
 
 import asyncio
+from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import Depends, Request
@@ -10,14 +11,13 @@ from app.apps.public import AppsFacadeDep
 from app.apps.services.facade import AppsFacade
 from app.core.config import Settings
 from app.core.deps import AgentsDep, RoutesDep, SettingsDep
-from app.deploys.repositories.deploys import DeployRepository
 from app.deploys.services.deploys import DeployService
+from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteWriter
 
 
-def get_deploy_repo(request: Request) -> DeployRepository:
-    """The deploy repository."""
-    return request.app.state.deploy_repo
+def get_deploys_uow_factory(request: Request) -> Callable[[], DeploysUoW]:
+    return request.app.state.deploys_uow_factory
 
 
 def get_deploy_tasks(request: Request) -> set[asyncio.Task[None]]:
@@ -25,12 +25,12 @@ def get_deploy_tasks(request: Request) -> set[asyncio.Task[None]]:
     return request.app.state.deploy_tasks
 
 
-DeployRepoDep = Annotated[DeployRepository, Depends(get_deploy_repo)]
+DeployUoWDep = Annotated[Callable[[], DeploysUoW], Depends(get_deploys_uow_factory)]
 DeployTasksDep = Annotated[set[asyncio.Task[None]], Depends(get_deploy_tasks)]
 
 
 def build_deploy_service(
-    repo: DeployRepository,
+    uow_factory: Callable[[], DeploysUoW],
     apps: AppsFacade,
     agents: Agents,
     routes: RouteWriter,
@@ -38,18 +38,18 @@ def build_deploy_service(
     tasks: set[asyncio.Task[None]],
 ) -> DeployService:
     """The single place DeployService is constructed (request and event paths)."""
-    return DeployService(repo, apps, agents, routes, settings, tasks)
+    return DeployService(uow_factory, apps, agents, routes, settings, tasks)
 
 
 def get_deploy_service(
-    repo: DeployRepoDep,
+    uow_factory: DeployUoWDep,
     apps: AppsFacadeDep,
     agents: AgentsDep,
     routes: RoutesDep,
     settings: SettingsDep,
     tasks: DeployTasksDep,
 ) -> DeployService:
-    return build_deploy_service(repo, apps, agents, routes, settings, tasks)
+    return build_deploy_service(uow_factory, apps, agents, routes, settings, tasks)
 
 
 DeployServiceDep = Annotated[DeployService, Depends(get_deploy_service)]

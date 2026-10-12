@@ -4,7 +4,7 @@ bult is a distributed system even without microservices. A deploy changes state 
 
 | Resource | Where its state lives | Has its own "commit" |
 |---|---|---|
-| Control plane | memory today, PostgreSQL planned | a database transaction |
+| Control plane | PostgreSQL (apps, deploys) | a database transaction |
 | Builder | job directory on the build node (`status.json`, `build.log`) | the job reaches a final state |
 | Runner | a container in Docker on a worker node | the container is created and started |
 | Ingress | `/routes` volume + nginx | the sidecar confirms a generation in `status.json` |
@@ -36,7 +36,7 @@ Docker on a node cannot roll back together with Postgres, so two-phase commit is
 
 Today the saga state lives only in the memory of the `run_deploy` task: if the control plane restarts mid-deploy, the saga is lost while the builder and runner keep going. The plan:
 
-1. **Persist the saga state (with PostgreSQL storage).** The deploy row (status + current step + ids of what was created) is the saga log, written in its own short transaction after each step. The background task uses its own DB session, not the request's.
+1. **Persist the saga state — done.** The deploy row is the saga log: each step writes its status in its own short transaction (one UoW per write, never across gRPC calls or waits). Still missing: recording the current step and created resources explicitly for recovery.
 2. **Recovery on startup.** For every unfinished deploy: ask the agents what actually exists (`GetDeploy`, `ListReplicas`) and either continue from the last confirmed step or compensate. This is the reconciliation the agent API was designed for (the agent is the source of truth for its own job and containers).
 3. **Compensations.** Done: `RemoveReplica` on route failure and on app deletion. Planned: old replica removal after the redeploy pivot.
 

@@ -5,8 +5,9 @@ import asyncio
 import grpc
 import pytest
 
-from app.deploys.repositories.deploys import Deploy, InMemoryDeployRepository
+from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.runner import MAX_POLL_FAILURES, run_deploy
+from app.deploys.uow import InMemoryDeploysUoW
 from app.ingress.routes import Route, RouteApplyError
 from tests.fakes import (
     BUILD_ERROR,
@@ -22,27 +23,36 @@ from tests.fakes import (
 )
 
 
-def _repo_with_deploy(deploy_id: str) -> InMemoryDeployRepository:
-    repo = InMemoryDeployRepository()
-    repo.add(Deploy(id=deploy_id, app_name="blog"))
-    return repo
+def _uow_with_deploy(deploy_id: str) -> InMemoryDeploysUoW:
+    uow = InMemoryDeploysUoW()
+    asyncio.run(uow.deploys.add(Deploy(id=deploy_id, app_name="blog")))
+    return uow
 
 
-def _get(repo: InMemoryDeployRepository, deploy_id: str) -> Deploy:
-    deploy = repo.get(deploy_id)
+def _get(uow: InMemoryDeploysUoW, deploy_id: str) -> Deploy:
+    deploy = asyncio.run(uow.deploys.get(deploy_id))
     assert deploy is not None
     return deploy
 
 
 def test_run_deploy_success(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=["RUNNING", "SUCCEEDED"])
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
 
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            "d1",
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
-    deploy = _get(repo, "d1")
+    deploy = _get(uow, "d1")
     assert deploy.status == "running"
     assert deploy.node == "node-a"
     assert deploy.host_port == HOST_PORT
@@ -62,13 +72,22 @@ def test_run_deploy_success(routes: FakeRoutes):
 
 def test_run_deploy_build_failed(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=["FAILED"])
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
 
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            "d1",
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
-    deploy = _get(repo, "d1")
+    deploy = _get(uow, "d1")
     assert deploy.status == "failed"
     assert deploy.error == BUILD_ERROR
     assert agents.run_calls == []
@@ -80,13 +99,22 @@ def test_run_deploy_run_replica_unavailable(routes: FakeRoutes):
         build_states=["SUCCEEDED"],
         run_error=rpc_error(grpc.StatusCode.UNAVAILABLE, details),
     )
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
 
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            "d1",
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
-    deploy = _get(repo, "d1")
+    deploy = _get(uow, "d1")
     assert deploy.status == "failed"
     assert deploy.error == "start failed: node is unreachable"
     assert "192.168" not in deploy.error
@@ -96,43 +124,72 @@ def test_run_deploy_poll_survives_transient_unavailable(routes: FakeRoutes):
     agents = FakeAgentClients(
         build_states=["RUNNING", rpc_error(grpc.StatusCode.UNAVAILABLE), "SUCCEEDED"]
     )
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
 
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            "d1",
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
-    assert _get(repo, "d1").status == "running"
+    assert _get(uow, "d1").status == "running"
     assert agents.get_calls == 3
 
 
 def test_run_deploy_poll_gives_up_after_repeated_unavailable(routes: FakeRoutes):
     agents = FakeAgentClients(build_states=[rpc_error(grpc.StatusCode.UNAVAILABLE)])
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
 
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, "d1", "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            "d1",
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
-    deploy = _get(repo, "d1")
+    deploy = _get(uow, "d1")
     assert deploy.status == "failed"
     assert deploy.error == "build failed: node is unreachable"
     assert agents.get_calls == MAX_POLL_FAILURES
     assert agents.run_calls == []
 
 
-def _run(agents, repo, routes, deploy_id="d1"):
+def _run(agents, uow, routes, deploy_id="d1"):
     asyncio.run(
-        run_deploy(agents, repo, routes, RUNNERS, deploy_id, "blog", TRUSTED_PROXY, poll_interval=0)
+        run_deploy(
+            agents,
+            lambda: uow,
+            routes,
+            RUNNERS,
+            deploy_id,
+            "blog",
+            TRUSTED_PROXY,
+            poll_interval=0,
+        )
     )
 
 
 def test_run_deploy_app_deleted_during_build(routes: FakeRoutes):
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
     agents = FakeAgentClients(build_states=["SUCCEEDED"])
-    repo.delete_for_app("blog")  # DELETE /apps/blog arrived while the build ran
+    asyncio.run(
+        uow.deploys.delete_for_app("blog")
+    )  # DELETE /apps/blog arrived while the build ran
 
-    _run(agents, repo, routes)
+    _run(agents, uow, routes)
 
     assert agents.run_calls == []
     assert agents.remove_calls == []
@@ -142,13 +199,13 @@ def test_run_deploy_app_deleted_during_build(routes: FakeRoutes):
 def test_run_deploy_app_deleted_after_run_replica_removes_replica(
     routes: FakeRoutes, caplog: pytest.LogCaptureFixture
 ):
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
     agents = FakeAgentClients(
-        build_states=["SUCCEEDED"], on_run=lambda: repo.delete_for_app("blog")
+        build_states=["SUCCEEDED"], on_run=lambda: uow.deploys.delete_for_app("blog")
     )
 
     with caplog.at_level("INFO"):
-        _run(agents, repo, routes)
+        _run(agents, uow, routes)
 
     assert len(agents.run_calls) == 1
     assert agents.remove_calls == [{"node": "node-a", "replica_id": "d1-r0"}]
@@ -157,14 +214,14 @@ def test_run_deploy_app_deleted_after_run_replica_removes_replica(
 
 
 def test_run_deploy_replica_removal_failure_is_only_logged(routes: FakeRoutes):
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
     agents = FakeAgentClients(
         build_states=["SUCCEEDED"],
-        on_run=lambda: repo.delete_for_app("blog"),
+        on_run=lambda: uow.deploys.delete_for_app("blog"),
         remove_error=rpc_error(grpc.StatusCode.UNAVAILABLE),
     )
 
-    _run(agents, repo, routes)  # does not raise
+    _run(agents, uow, routes)  # does not raise
 
     assert len(agents.remove_calls) == 1
 
@@ -176,12 +233,12 @@ def test_run_deploy_route_failure_fails_deploy_and_removes_replica(
         raise RouteApplyError("unexpected '}' in blog.conf")
 
     monkeypatch.setattr(routes, "wait_applied", rejected)
-    repo = _repo_with_deploy("d1")
+    uow = _uow_with_deploy("d1")
     agents = FakeAgentClients(build_states=["SUCCEEDED"])
 
-    _run(agents, repo, routes)
+    _run(agents, uow, routes)
 
-    deploy = _get(repo, "d1")
+    deploy = _get(uow, "d1")
     assert deploy.status == "failed"
     assert deploy.error == "route failed: could not publish the app's address"
     assert "}" not in deploy.error  # nginx's message stays in the log

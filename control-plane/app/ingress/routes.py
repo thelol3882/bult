@@ -131,7 +131,7 @@ class RunningDeploy(Protocol):
     @property
     def host_port(self) -> int: ...
     @property
-    def created_at(self) -> datetime: ...
+    def created_at(self) -> datetime | None: ...
 
 
 def running_routes(
@@ -144,7 +144,10 @@ def running_routes(
     for d in deploys:
         if d.status != "running" or d.app_name == skip_app:
             continue
-        if d.app_name not in latest or d.created_at > latest[d.app_name].created_at:
+        # stored deploys always have a timestamp
+        assert d.created_at is not None
+        prev = latest.get(d.app_name)
+        if prev is None or (prev.created_at and d.created_at > prev.created_at):
             latest[d.app_name] = d
 
     return [

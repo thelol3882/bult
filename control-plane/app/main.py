@@ -10,17 +10,18 @@ from app import health
 from app.agents.client import AgentClients
 from app.apps.events import AppDeleted
 from app.apps.public import build_apps_facade
-from app.apps.repositories.apps import InMemoryAppRepository
 from app.apps.routers import apps as apps_router
+from app.apps.uow import sql_apps_uow_factory
 from app.core import exception_handlers
 from app.core.config import Settings
+from app.core.db import create_engine, create_session_factory
 from app.core.events import EventBus
 from app.core.logging import setup_logging
 from app.core.middleware import TraceIdMiddleware
 from app.deploys import handlers as deploys_handlers
 from app.deploys.deps import build_deploy_service
-from app.deploys.repositories.deploys import InMemoryDeployRepository
 from app.deploys.routers import deploys as deploys_router
+from app.deploys.uow import sql_deploys_uow_factory
 from app.ingress.routes import RouteWriter
 
 
@@ -31,9 +32,11 @@ async def lifespan(app: FastAPI):
     app.state.settings = settings
     app.state.agents = AgentClients(settings.builder, settings.runners)
     app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
-    # In-memory until PostgreSQL storage lands.
-    app.state.app_repo = InMemoryAppRepository()
-    app.state.deploy_repo = InMemoryDeployRepository()
+    engine = create_engine(settings.database_url)
+    session_factory = create_session_factory(engine)
+    app.state.db_engine = engine
+    app.state.apps_uow_factory = sql_apps_uow_factory(session_factory)
+    app.state.deploys_uow_factory = sql_deploys_uow_factory(session_factory)
     app.state.deploy_tasks = set()
     yield
 
@@ -42,6 +45,7 @@ async def lifespan(app: FastAPI):
         task.cancel()
     await asyncio.gather(*tasks, return_exceptions=True)
     await app.state.agents.close()
+    await app.state.db_engine.dispose()
 
 
 def _build_event_bus(app: FastAPI) -> EventBus:
@@ -50,9 +54,14 @@ def _build_event_bus(app: FastAPI) -> EventBus:
 
     async def on_app_deleted(event: AppDeleted) -> None:
         state = app.state
+
         deploys = build_deploy_service(
-            state.deploy_repo,
-            build_apps_facade(state.app_repo, state.settings, bus.collector()),
+            state.deploys_uow_factory,
+            build_apps_facade(
+                uow_factory=state.apps_uow_factory,
+                settings=state.settings,
+                events=bus.collector(),
+            ),
             state.agents,
             state.routes,
             state.settings,

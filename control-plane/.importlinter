@@ -90,3 +90,17 @@ forbidden_modules =
     app.agents
     app.ingress
 allow_indirect_imports = True
+
+[importlinter:contract:services-know-no-sqlalchemy]
+name = Services, errors, handlers and the event bus know ports only, not sqlalchemy
+type = forbidden
+source_modules =
+    app.apps.services
+    app.deploys.services
+    app.core.events
+    app.core.errors
+    app.deploys.handlers
+forbidden_modules =
+    sqlalchemy
+# services -> uow -> sql repositories is wiring; only direct imports are forbidden.
+allow_indirect_imports = True

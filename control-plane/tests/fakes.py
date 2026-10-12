@@ -1,6 +1,6 @@
 """Fakes shared by the tests of several domains."""
 
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +49,7 @@ class FakeAgentClients:
         build_states: list[str | AioRpcError] | None = None,
         run_error: AioRpcError | None = None,
         remove_error: AioRpcError | None = None,
-        on_run: Callable[[], None] | None = None,
+        on_run: Callable[[], Awaitable[None]] | None = None,
         start_error_times: int | None = None,
     ) -> None:
         self.start_error = start_error
@@ -101,7 +101,7 @@ class FakeAgentClients:
         if self.run_error is not None:
             raise self.run_error
         if self.on_run is not None:
-            self.on_run()
+            await self.on_run()
         return ReplicaResult(replica_id=replica_id, node=node, host_port=HOST_PORT)
 
     async def remove_replica(self, node: str, replica_id: str) -> None:
