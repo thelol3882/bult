@@ -1,10 +1,12 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Button, Skeleton, Stack } from '@mantine/core';
+import { parseAsInteger, useQueryState } from 'nuqs';
+import { Button, Group, Pagination, Skeleton, Stack } from '@mantine/core';
 import { IconPlus, IconRefresh } from '@tabler/icons-react';
-import { AppsTable, useDeleteApp, useGetAppsQuery } from '@/features/apps';
+import { APPS_PAGE_SIZE, AppsTable, useDeleteApp, useGetAppsQuery } from '@/features/apps';
 import { BackendUnavailablePage } from '@/features/error';
 import { useStartDeploy } from '@/features/deploys';
 import { normalizeError } from '@/shared/api';
@@ -12,7 +14,10 @@ import { EmptyState, PageHeader } from '@/shared/components';
 
 export function AppsListWidget() {
     const router = useRouter();
-    const { data: apps, error, isLoading, refetch } = useGetAppsQuery();
+    const [page, setPage] = useQueryState('page', parseAsInteger.withDefault(1));
+    const { data, error, isLoading, refetch } = useGetAppsQuery(Math.max(page, 1));
+    const apps = data?.results;
+    const totalPages = data ? Math.ceil(data.count / APPS_PAGE_SIZE) : 0;
     const { deploy } = useStartDeploy();
     const confirmDelete = useDeleteApp();
 
@@ -20,6 +25,13 @@ export function AppsListWidget() {
         const id = await deploy(name);
         if (id) router.push(`/apps/${name}?deploy=${id}`);
     };
+
+    // The page may be gone (last item deleted, stale URL): the API points to the last one.
+    useEffect(() => {
+        if (data && data.results.length === 0 && data.count > 0 && data.previous !== null) {
+            void setPage(data.previous === 1 ? null : data.previous);
+        }
+    }, [data, setPage]);
 
     const apiError = error ? normalizeError(error) : undefined;
 
@@ -62,7 +74,7 @@ export function AppsListWidget() {
                 />
             )}
 
-            {apps?.length === 0 && (
+            {data?.count === 0 && (
                 <EmptyState
                     title="No apps yet"
                     description="Connect a repo to get a URL."
@@ -80,7 +92,18 @@ export function AppsListWidget() {
             )}
 
             {apps && apps.length > 0 && (
-                <AppsTable apps={apps} onDeploy={handleDeploy} onDelete={confirmDelete} />
+                <Stack gap="md">
+                    <AppsTable apps={apps} onDeploy={handleDeploy} onDelete={confirmDelete} />
+                    {data && data.count > APPS_PAGE_SIZE && (
+                        <Group justify="flex-end">
+                            <Pagination
+                                total={totalPages}
+                                value={page}
+                                onChange={(value) => setPage(value === 1 ? null : value)}
+                            />
+                        </Group>
+                    )}
+                </Stack>
             )}
         </>
     );

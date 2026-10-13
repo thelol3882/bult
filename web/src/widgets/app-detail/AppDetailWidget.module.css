@@ -22,3 +22,7 @@
     text-decoration: underline;
     text-underline-offset: 3px;
 }
+
+.history {
+    grid-column: 1 / -1;
+}

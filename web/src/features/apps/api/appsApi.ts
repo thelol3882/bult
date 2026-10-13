@@ -1,13 +1,16 @@
 import { baseApi } from '@/shared/api';
-import type { AppCreate, BultApp } from '../types';
+import type { Page } from '@/shared/types';
+import type { AppCreate, AppUpdate, BultApp } from '../types';
+
+export const APPS_PAGE_SIZE = 20;
 
 export const appsApi = baseApi.injectEndpoints({
     endpoints: (build) => ({
-        getApps: build.query<BultApp[], void>({
-            query: () => '/apps',
+        getApps: build.query<Page<BultApp>, number>({
+            query: (page) => `/apps?page=${page}&page_size=${APPS_PAGE_SIZE}`,
             providesTags: (result) => [
                 { type: 'App', id: 'LIST' },
-                ...(result ?? []).map(({ name }) => ({ type: 'App' as const, id: name })),
+                ...(result?.results ?? []).map(({ name }) => ({ type: 'App' as const, id: name })),
             ],
         }),
         getApp: build.query<BultApp, string>({
@@ -22,6 +25,17 @@ export const appsApi = baseApi.injectEndpoints({
                 ...(app ? [{ type: 'App' as const, id: app.name }] : []),
             ],
         }),
+        updateApp: build.mutation<BultApp, { name: string; patch: AppUpdate }>({
+            query: ({ name, patch }) => ({
+                url: `/apps/${encodeURIComponent(name)}`,
+                method: 'PATCH',
+                body: patch,
+            }),
+            invalidatesTags: (_result, _error, { name }) => [
+                { type: 'App', id: name },
+                { type: 'App', id: 'LIST' },
+            ],
+        }),
         deleteApp: build.mutation<void, string>({
             query: (name) => ({ url: `/apps/${encodeURIComponent(name)}`, method: 'DELETE' }),
             // List only: invalidating the app's own tag would refetch it (404).
@@ -30,5 +44,10 @@ export const appsApi = baseApi.injectEndpoints({
     }),
 });
 
-export const { useGetAppsQuery, useGetAppQuery, useCreateAppMutation, useDeleteAppMutation } =
-    appsApi;
+export const {
+    useGetAppsQuery,
+    useGetAppQuery,
+    useCreateAppMutation,
+    useUpdateAppMutation,
+    useDeleteAppMutation,
+} = appsApi;

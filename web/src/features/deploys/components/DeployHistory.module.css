@@ -1,0 +1,85 @@
+.head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--slate-2);
+}
+
+.head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.state {
+    display: grid;
+    place-items: center;
+    padding: 32px;
+}
+
+.pad {
+    padding: 16px 20px;
+}
+
+.empty {
+    margin: 0;
+    padding: 28px 20px;
+    color: var(--slate-6);
+    font-size: 13px;
+    text-align: center;
+}
+
+.list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.item {
+    display: grid;
+    grid-template-columns: 110px 80px 120px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    width: 100%;
+    padding: 12px 20px;
+    border: 0;
+    border-bottom: 1px solid var(--slate-2);
+    background: transparent;
+    font: inherit;
+    font-size: 13px;
+    text-align: left;
+    cursor: pointer;
+}
+
+.item:hover {
+    background: var(--sky-0, var(--slate-1));
+}
+
+.item[data-selected] {
+    background: var(--sky-1, var(--slate-1));
+}
+
+.muted {
+    color: var(--slate-6);
+}
+
+.where {
+    min-width: 0;
+}
+
+.error {
+    grid-column: 1 / -1;
+    overflow: hidden;
+    color: var(--red-7);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.more {
+    display: flex;
+    justify-content: center;
+    padding: 14px 20px;
+}

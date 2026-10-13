@@ -17,3 +17,6 @@ export interface AppCreate {
     branch: string;
     subdir: string;
 }
+
+/** Partial update: only changed fields are sent; the name is immutable. */
+export type AppUpdate = Partial<Omit<AppCreate, 'name'>>;
