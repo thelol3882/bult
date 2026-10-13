@@ -56,9 +56,55 @@ def test_create_rejects_non_https_repo(client: TestClient):
 def test_list_is_sorted(client: TestClient):
     for name in ("zeta", "alpha", "mid"):
         assert create(client, name=name).status_code == 201
-    names = [app["name"] for app in client.get("/apps").json()]
+    names = [app["name"] for app in client.get("/apps").json()["results"]]
     assert names == ["alpha", "mid", "zeta"]
+
+
+def test_list_pages(client: TestClient):
+    for name in ("a", "b", "c"):
+        create(client, name=name)
+    page = client.get("/apps?page=2&page_size=2").json()
+    assert page["count"] == 3
+    assert [a["name"] for a in page["results"]] == ["c"]
+    assert page["previous"] == 1 and page["next"] is None
 
 
 def test_get_missing(client: TestClient):
     assert client.get("/apps/nope").status_code == 404
+
+
+def test_patch_changes_only_sent_fields(client: TestClient):
+    create(client)
+    resp = client.patch("/apps/blog", json={"branch": "dev"})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["branch"] == "dev"
+    assert body["subdir"] == VALID["subdir"]
+
+
+def test_patch_empty_subdir_is_kept(client: TestClient):
+    create(client)
+    resp = client.patch("/apps/blog", json={"subdir": ""})
+    assert resp.status_code == 200
+    assert resp.json()["subdir"] == ""
+
+
+@pytest.mark.parametrize("body, field", [({"branch": None}, "branch"), ({"name": "x"}, "name")])
+def test_patch_rejects_null_and_unknown_fields(client: TestClient, body: dict, field: str):
+    create(client)
+    resp = client.patch("/apps/blog", json=body)
+    assert resp.status_code == 422
+    assert field in resp.json()["fields"]
+
+
+def test_patch_missing_app_is_404(client: TestClient):
+    resp = client.patch("/apps/nope", json={"branch": "dev"})
+    assert resp.status_code == 404
+
+
+def test_list_page_past_the_end_points_back_to_last_page(client: TestClient):
+    for name in ("a", "b", "c", "d", "e"):
+        create(client, name=name)
+    page = client.get("/apps?page=9&page_size=2").json()
+    assert page["results"] == []
+    assert page["previous"] == 3 and page["next"] is None

@@ -137,6 +137,11 @@ class DeployService:
                 raise DeployNotFoundError(deploy_id)
             return deploy
 
+    # TODO history(app_name, before, limit) -> list[Deploy]:
+    #  1. await self._apps.get_app(app_name) — the facade raises AppNotFoundError → 404
+    #     (otherwise an unknown app would just return an empty list).
+    #  2. Read-only UoW: return await uow.deploys.list_for_app(app_name, before, limit). No commit.
+
     async def remove_app(self, app_name: str) -> None:
         """Drop the app's routes and remove its replicas (failures are logged).
 

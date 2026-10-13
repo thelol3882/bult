@@ -5,10 +5,11 @@ from collections.abc import Callable
 from app.apps.errors import AppNameTakenError, AppNotFoundError
 from app.apps.events import AppDeleted
 from app.apps.repositories.apps import App
-from app.apps.schemas.apps import AppCreate
+from app.apps.schemas.apps import AppCreate, AppUpdate
 from app.apps.uow import AppsUoW
 from app.core.config import Settings
 from app.core.events import EventPublisher
+from app.core.pagination import PageParams
 
 
 class AppService:
@@ -44,9 +45,28 @@ class AppService:
                 raise AppNotFoundError(name)
             return app
 
-    async def list(self) -> list[App]:
+    async def update(self, name: str, data: AppUpdate) -> App:
+        changes = data.model_dump(exclude_unset=True)
+        if not changes:
+            return await self.get(name)
+
+        if changes.get("repo_url") is not None:
+            changes["repo_url"] = str(changes["repo_url"])
+
         async with self._uow_factory() as uow:
-            return await uow.apps.list()
+            result = await uow.apps.update(name, **changes)
+
+            if result is None:
+                raise AppNotFoundError(name)
+
+            await uow.commit()
+            return result
+
+    async def list(self, params: PageParams) -> tuple[list[App], int]:
+        async with self._uow_factory() as uow:
+            total = await uow.apps.count()
+            apps = await uow.apps.list(params.offset, params.page_size)
+            return apps, total
 
     async def delete(self, name: str) -> None:
         """Delete the app; subscribers of AppDeleted clean up the rest."""

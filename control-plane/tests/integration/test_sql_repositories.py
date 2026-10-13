@@ -152,3 +152,10 @@ async def test_update_bumps_updated_at_but_not_created_at(
     created_after, updated_after = await read_timestamps(factory, "d1")
     assert created_after == created
     assert updated_after > updated
+
+
+def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates():
+    # Insert 5 deploys for one app, several with the SAME created_at (set it explicitly),
+    # walk list_for_app with limit=2 following the cursor until it ends →
+    # every deploy id appears exactly once, newest first.
+    raise NotImplementedError

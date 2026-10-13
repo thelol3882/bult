@@ -1,6 +1,6 @@
 """AppRepository on PostgreSQL: ORM rows in, App dataclasses out."""
 
-from sqlalchemy import CursorResult, delete, select
+from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,8 +34,29 @@ class SqlAppRepository:
         row = await self._session.scalar(select(AppModel).where(AppModel.name == name))
         return None if row is None else _to_domain(row)
 
-    async def list(self) -> list[App]:
-        rows = await self._session.scalars(select(AppModel).order_by(AppModel.name))
+    async def update(self, name: str, **changes) -> App | None:
+        stmt = (
+            update(AppModel)
+            .where(AppModel.name == name)
+            .values(**changes)
+            .returning(AppModel)
+        )
+        result = await self._session.execute(stmt)
+        updated_row = result.scalar_one_or_none()
+
+        if updated_row is None:
+            return None
+
+        return _to_domain(updated_row)
+
+    async def count(self) -> int:
+        result = await self._session.execute(select(func.count()).select_from(AppModel))
+        return result.scalar_one()
+
+    async def list(self, offset: int, limit: int) -> list[App]:
+        rows = await self._session.scalars(
+            select(AppModel).order_by(AppModel.name).offset(offset).limit(limit)
+        )
         result: list[App] = []
         for row in rows.all():
             result.append(_to_domain(row))

@@ -20,3 +20,6 @@ class ErrorCode(StrEnum):
     # deploys
     DEPLOY_NOT_FOUND = "deploy_not_found"
     BUILDER_UNAVAILABLE = "builder_unavailable"
+
+    # pagination
+    INVALID_CURSOR = "invalid_cursor"

@@ -11,6 +11,11 @@ from app.deploys.models.deploys import DeployModel
 from app.deploys.repositories.deploys import UPDATABLE_FIELDS, Deploy, DeployStatus
 
 
+# TODO list_for_app in SQL:
+#  1. select(DeployModel).where(DeployModel.app_name == app_name)
+#  2. if before: .where(tuple_(DeployModel.created_at, DeployModel.id) < tuple_(*before))
+#  3. .order_by(DeployModel.created_at.desc(), DeployModel.id.desc()).limit(limit)
+#  4. scalars → _to_domain each.
 class SqlDeployRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session

@@ -2,9 +2,16 @@
 
 import re
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, HttpUrl, field_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 # Platform-owned names that must not become app subdomains.
 RESERVED_NAMES: frozenset[str] = frozenset({"api", "www", "admin", "registry"})
@@ -15,6 +22,29 @@ NAME_FORMAT_MESSAGE = (
     "Use lowercase letters, digits and hyphens (up to 63 characters); "
     "must start and end with a letter or digit."
 )
+
+
+class AppUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    preset: Literal["fastapi", "express"] | None = None
+    repo_url: HttpUrl | None = None
+    branch: str | None = None
+    subdir: str | None = None
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def reject_explicit_null(cls, value: Any) -> Any:
+        if value is None:
+            raise ValueError("cannot be null")
+        return value
+
+    @field_validator("repo_url")
+    @classmethod
+    def validate_repo_url_https(cls, value: HttpUrl) -> HttpUrl:
+        if value.scheme != "https":
+            raise ValueError("Repository URL must use the HTTPS scheme.")
+        return value
 
 
 class AppCreate(BaseModel):

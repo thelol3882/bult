@@ -28,6 +28,9 @@ class Deploy:
 UPDATABLE_FIELDS = {f.name for f in fields(Deploy)} - {"id", "app_name", "created_at"}
 
 
+# TODO list_for_app(app_name, before: tuple[datetime, str] | None, limit) -> list[Deploy]:
+#  newest first, ordered by (created_at, id) DESC; `before` = strictly older than that pair.
+#  The fake must sort and cut exactly like the SQL version.
 class DeployRepository(Protocol):
     """Storage only; domain rules live in DeployService."""
 
@@ -41,6 +44,11 @@ class DeployRepository(Protocol):
     async def delete_for_app(self, app_name: str) -> None: ...
 
 
+# TODO list_for_app in the fake (must match SQL exactly):
+#  1. Take the app's deploys: [d for d in self._deploys.values() if d.app_name == app_name].
+#  2. Sort newest first by the pair: key=lambda d: (d.created_at, d.id), reverse=True.
+#  3. If before is not None: keep only d with (d.created_at, d.id) < before (tuples compare left to right).
+#  4. Return copies (replace) of the first `limit`.
 class InMemoryDeployRepository:
     """Dict keyed by id; also the test fake. Hands out copies, like rows from a database."""
 
