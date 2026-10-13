@@ -3,7 +3,7 @@
 import asyncio
 import functools
 from collections.abc import Callable, Coroutine
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -77,13 +77,13 @@ async def test_app_repository_roundtrip(factory: async_sessionmaker):
     async with SqlAppsUoW(factory) as uow:
         assert await uow.apps.get("hello") == added
         assert await uow.apps.get("missing") is None
-        assert [a.name for a in await uow.apps.list()] == ["alpha", "hello"]
+        assert [a.name for a in await uow.apps.list(0, 100)] == ["alpha", "hello"]
         assert await uow.apps.delete("hello") is True
         assert await uow.apps.delete("hello") is False
         await uow.commit()
 
     async with SqlAppsUoW(factory) as uow:
-        assert [a.name for a in await uow.apps.list()] == ["alpha"]
+        assert [a.name for a in await uow.apps.list(0, 100)] == ["alpha"]
 
 
 @db_test
@@ -121,7 +121,7 @@ async def test_uow_without_commit_saves_nothing(factory: async_sessionmaker):
         await uow.apps.add(make_app())
 
     async with SqlAppsUoW(factory) as uow:
-        assert await uow.apps.list() == []
+        assert await uow.apps.list(0, 100) == []
 
 
 @db_test
@@ -154,8 +154,35 @@ async def test_update_bumps_updated_at_but_not_created_at(
     assert updated_after > updated
 
 
-def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates():
-    # Insert 5 deploys for one app, several with the SAME created_at (set it explicitly),
-    # walk list_for_app with limit=2 following the cursor until it ends →
-    # every deploy id appears exactly once, newest first.
-    raise NotImplementedError
+@db_test
+async def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates(
+    factory: async_sessionmaker,
+):
+    async with SqlAppsUoW(factory) as uow:
+        await uow.apps.add(make_app())
+        await uow.commit()
+    # Three deploys share one timestamp: only (created_at, id) orders them uniquely.
+    older = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
+    newer = datetime(2026, 1, 1, 13, 0, tzinfo=UTC)
+    rows = [("d1", older), ("d2", older), ("d3", older), ("d4", newer), ("d5", newer)]
+    async with factory() as session:
+        for deploy_id, created_at in rows:
+            await session.execute(
+                text("INSERT INTO deploys (id, app_name, created_at) VALUES (:i, 'hello', :c)"),
+                {"i": deploy_id, "c": created_at},
+            )
+        await session.commit()
+
+    seen: list[str] = []
+    before = None
+    while True:
+        async with SqlDeploysUoW(factory) as uow:
+            page = await uow.deploys.list_for_app("hello", before, 2)
+        if not page:
+            break
+        seen += [d.id for d in page]
+        last = page[-1]
+        assert last.created_at is not None
+        before = (last.created_at, last.id)
+
+    assert seen == ["d5", "d4", "d3", "d2", "d1"]

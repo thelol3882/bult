@@ -4,6 +4,7 @@ import asyncio
 import logging
 import uuid
 from collections.abc import Callable
+from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 
@@ -137,10 +138,12 @@ class DeployService:
                 raise DeployNotFoundError(deploy_id)
             return deploy
 
-    # TODO history(app_name, before, limit) -> list[Deploy]:
-    #  1. await self._apps.get_app(app_name) — the facade raises AppNotFoundError → 404
-    #     (otherwise an unknown app would just return an empty list).
-    #  2. Read-only UoW: return await uow.deploys.list_for_app(app_name, before, limit). No commit.
+    async def history(
+        self, app_name: str, before: tuple[datetime, str] | None, limit: int
+    ) -> list[Deploy]:
+        await self._apps.get_app(app_name)
+        async with self._uow_factory() as uow:
+            return await uow.deploys.list_for_app(app_name, before, limit)
 
     async def remove_app(self, app_name: str) -> None:
         """Drop the app's routes and remove its replicas (failures are logged).
@@ -182,9 +185,7 @@ class DeployService:
                 if replica.app_id != app_name:
                     continue
                 found += 1
-                if await remove_replica_quietly(
-                    self._agents, node, replica.replica_id
-                ):
+                if await remove_replica_quietly(self._agents, node, replica.replica_id):
                     removed += 1
 
         logger.info(

@@ -1,8 +1,9 @@
 """DeployRepository on PostgreSQL: ORM rows in, Deploy dataclasses out."""
 
+from datetime import datetime
 from typing import cast
 
-from sqlalchemy import CursorResult, delete, select, update
+from sqlalchemy import CursorResult, delete, select, tuple_, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,11 +12,6 @@ from app.deploys.models.deploys import DeployModel
 from app.deploys.repositories.deploys import UPDATABLE_FIELDS, Deploy, DeployStatus
 
 
-# TODO list_for_app in SQL:
-#  1. select(DeployModel).where(DeployModel.app_name == app_name)
-#  2. if before: .where(tuple_(DeployModel.created_at, DeployModel.id) < tuple_(*before))
-#  3. .order_by(DeployModel.created_at.desc(), DeployModel.id.desc()).limit(limit)
-#  4. scalars → _to_domain each.
 class SqlDeployRepository:
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
@@ -68,6 +64,26 @@ class SqlDeployRepository:
         rows = await self._session.scalars(
             select(DeployModel).order_by(DeployModel.created_at)
         )
+        result: list[Deploy] = []
+        for row in rows.all():
+            result.append(_to_domain(row))
+
+        return result
+
+    async def list_for_app(
+        self, app_name: str, before: tuple[datetime, str] | None, limit: int
+    ) -> list[Deploy]:
+        stmt = select(DeployModel).where(DeployModel.app_name == app_name)
+        if before:
+            stmt = stmt.where(
+                tuple_(DeployModel.created_at, DeployModel.id) < tuple_(*before)
+            )
+
+        stmt = stmt.order_by(
+            DeployModel.created_at.desc(), DeployModel.id.desc()
+        ).limit(limit)
+
+        rows = await self._session.scalars(stmt)
         result: list[Deploy] = []
         for row in rows.all():
             result.append(_to_domain(row))
