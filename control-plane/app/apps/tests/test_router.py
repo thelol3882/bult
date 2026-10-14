@@ -108,3 +108,10 @@ def test_list_page_past_the_end_points_back_to_last_page(client: TestClient):
     page = client.get("/apps?page=9&page_size=2").json()
     assert page["results"] == []
     assert page["previous"] == 3 and page["next"] is None
+
+
+@pytest.mark.parametrize("page", [1, 3])
+def test_empty_list_has_no_neighbours(client: TestClient, page: int):
+    body = client.get(f"/apps?page={page}").json()
+    assert body["count"] == 0 and body["results"] == []
+    assert body["previous"] is None and body["next"] is None

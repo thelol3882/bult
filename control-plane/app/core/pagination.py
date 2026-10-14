@@ -33,9 +33,9 @@ class Page[T](BaseModel):
             (count + params.page_size - 1) // params.page_size if count > 0 else 0
         )
 
-        if params.page > total_pages:
+        if total_pages > 0 and params.page > total_pages:
             previous = total_pages
-        elif params.page > 1:
+        elif 1 < params.page <= total_pages:
             previous = params.page - 1
         else:
             previous = None
