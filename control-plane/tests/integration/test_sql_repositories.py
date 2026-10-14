@@ -9,11 +9,15 @@ from uuid import UUID
 
 import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.apps.errors import AppNameTakenError
 from app.apps.repositories.apps import App
 from app.apps.uow import SqlAppsUoW
+from app.auth.errors import EmailTakenError
+from app.auth.repositories.users import User
+from app.auth.uow import SqlAuthUoW
 from app.core.db import create_engine, create_session_factory
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.uow import SqlDeploysUoW
@@ -41,8 +45,17 @@ def db_test(
     return wrapper
 
 
-def make_app(name: str = "hello") -> App:
+async def make_user(factory: async_sessionmaker, email: str = "owner@example.com") -> UUID:
+    async with SqlAuthUoW(factory) as uow:
+        user = await uow.users.add(User(email=email, password_hash="hash"))
+        await uow.commit()
+    assert user.id is not None
+    return user.id
+
+
+def make_app(owner_id: UUID, name: str = "hello") -> App:
     return App(
+        owner_id=owner_id,
         name=name,
         preset="fastapi",
         repo_url="https://github.com/thelol3882/bult",
@@ -66,9 +79,10 @@ async def read_timestamps(
 
 @db_test
 async def test_app_repository_roundtrip(factory: async_sessionmaker):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        added = await uow.apps.add(make_app("hello"))
-        await uow.apps.add(make_app("alpha"))
+        added = await uow.apps.add(make_app(owner, "hello"))
+        await uow.apps.add(make_app(owner, "alpha"))
         await uow.commit()
 
     assert isinstance(added.id, UUID)
@@ -77,30 +91,32 @@ async def test_app_repository_roundtrip(factory: async_sessionmaker):
     async with SqlAppsUoW(factory) as uow:
         assert await uow.apps.get("hello") == added
         assert await uow.apps.get("missing") is None
-        assert [a.name for a in await uow.apps.list(0, 100)] == ["alpha", "hello"]
+        assert [a.name for a in await uow.apps.list(owner, 0, 100)] == ["alpha", "hello"]
         assert await uow.apps.delete("hello") is True
         assert await uow.apps.delete("hello") is False
         await uow.commit()
 
     async with SqlAppsUoW(factory) as uow:
-        assert [a.name for a in await uow.apps.list(0, 100)] == ["alpha"]
+        assert [a.name for a in await uow.apps.list(owner, 0, 100)] == ["alpha"]
 
 
 @db_test
 async def test_duplicate_name_is_app_name_taken(factory: async_sessionmaker):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        await uow.apps.add(make_app())
+        await uow.apps.add(make_app(owner))
         await uow.commit()
 
     async with SqlAppsUoW(factory) as uow:
         with pytest.raises(AppNameTakenError):
-            await uow.apps.add(make_app())
+            await uow.apps.add(make_app(owner))
 
 
 @db_test
 async def test_deleting_app_cascades_to_deploys(factory: async_sessionmaker):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        await uow.apps.add(make_app())
+        await uow.apps.add(make_app(owner))
         await uow.commit()
     async with SqlDeploysUoW(factory) as uow:
         await uow.deploys.add(Deploy(id="d1", app_name="hello"))
@@ -117,11 +133,12 @@ async def test_deleting_app_cascades_to_deploys(factory: async_sessionmaker):
 
 @db_test
 async def test_uow_without_commit_saves_nothing(factory: async_sessionmaker):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        await uow.apps.add(make_app())
+        await uow.apps.add(make_app(owner))
 
     async with SqlAppsUoW(factory) as uow:
-        assert await uow.apps.list(0, 100) == []
+        assert await uow.apps.list(owner, 0, 100) == []
 
 
 @db_test
@@ -134,8 +151,9 @@ async def test_update_missing_deploy_returns_none(factory: async_sessionmaker):
 async def test_update_bumps_updated_at_but_not_created_at(
     factory: async_sessionmaker,
 ):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        await uow.apps.add(make_app())
+        await uow.apps.add(make_app(owner))
         await uow.commit()
     async with SqlDeploysUoW(factory) as uow:
         await uow.deploys.add(Deploy(id="d1", app_name="hello"))
@@ -158,8 +176,9 @@ async def test_update_bumps_updated_at_but_not_created_at(
 async def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates(
     factory: async_sessionmaker,
 ):
+    owner = await make_user(factory)
     async with SqlAppsUoW(factory) as uow:
-        await uow.apps.add(make_app())
+        await uow.apps.add(make_app(owner))
         await uow.commit()
     # Three deploys share one timestamp: only (created_at, id) orders them uniquely.
     older = datetime(2026, 1, 1, 12, 0, tzinfo=UTC)
@@ -186,3 +205,74 @@ async def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates(
         before = (last.created_at, last.id)
 
     assert seen == ["d5", "d4", "d3", "d2", "d1"]
+
+
+@db_test
+async def test_user_repository_roundtrip(factory: async_sessionmaker):
+    async with SqlAuthUoW(factory) as uow:
+        added = await uow.users.add(User(email="a@example.com", password_hash="h1"))
+        await uow.commit()
+
+    assert isinstance(added.id, UUID)
+    assert isinstance(added.created_at, datetime)
+    async with SqlAuthUoW(factory) as uow:
+        assert await uow.users.get_by_email("a@example.com") == added
+        assert await uow.users.get(added.id) == added
+        assert await uow.users.get_by_email("b@example.com") is None
+        assert await uow.users.get(UUID(int=0)) is None
+
+
+@db_test
+async def test_duplicate_email_is_email_taken(factory: async_sessionmaker):
+    await make_user(factory, "a@example.com")
+
+    async with SqlAuthUoW(factory) as uow:
+        with pytest.raises(EmailTakenError):
+            await uow.users.add(User(email="a@example.com", password_hash="h2"))
+
+
+@db_test
+async def test_set_password_hash(factory: async_sessionmaker):
+    user_id = await make_user(factory)
+
+    async with SqlAuthUoW(factory) as uow:
+        await uow.users.set_password_hash(user_id, "new-hash")
+        await uow.commit()
+
+    async with SqlAuthUoW(factory) as uow:
+        user = await uow.users.get(user_id)
+    assert user is not None
+    assert user.password_hash == "new-hash"
+
+
+@db_test
+async def test_apps_list_and_count_are_filtered_by_owner(factory: async_sessionmaker):
+    alice = await make_user(factory, "alice@example.com")
+    bob = await make_user(factory, "bob@example.com")
+    async with SqlAppsUoW(factory) as uow:
+        for name in ("b-app", "a-app"):
+            await uow.apps.add(make_app(alice, name))
+        await uow.apps.add(make_app(bob, "bobs"))
+        await uow.commit()
+
+    async with SqlAppsUoW(factory) as uow:
+        assert await uow.apps.count(alice) == 2
+        assert [a.name for a in await uow.apps.list(alice, 0, 100)] == ["a-app", "b-app"]
+        assert [a.name for a in await uow.apps.list(alice, 1, 100)] == ["b-app"]
+        assert await uow.apps.count(bob) == 1
+        assert [a.name for a in await uow.apps.list(bob, 0, 100)] == ["bobs"]
+        assert (await uow.apps.get("bobs")).owner_id == bob  # pyright: ignore[reportOptionalMemberAccess]
+
+
+@db_test
+async def test_deleting_a_user_who_owns_an_app_is_restricted(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    async with SqlAppsUoW(factory) as uow:
+        await uow.apps.add(make_app(owner))
+        await uow.commit()
+
+    async with factory() as session:
+        with pytest.raises(IntegrityError):
+            await session.execute(text("DELETE FROM users WHERE id = :i"), {"i": owner})

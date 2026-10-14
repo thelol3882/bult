@@ -5,9 +5,13 @@ from pathlib import Path
 from typing import Any
 
 import grpc
+from fastapi.testclient import TestClient
 from grpc.aio import AioRpcError
+from pwdlib import PasswordHash
+from pwdlib.hashers.argon2 import Argon2Hasher
 
 from app.agents.client import DeployResult, ReplicaInfo, ReplicaResult
+from app.auth.services.passwords import PasswordHasher
 from app.ingress.routes import Route, RouteWriter
 
 COMMIT_SHA = "0123abc"
@@ -18,6 +22,26 @@ HOST_PORT = 32768
 TRUSTED_PROXY = "10.0.0.1"
 DOMAIN = "bult.localhost"
 RUNNERS = {"node-a": "10.0.0.5:50051"}
+PASSWORD = "correct horse battery"
+TEST_JWT_SECRET = "test-secret-" + "x" * 32
+
+
+class CheapPasswordHasher(PasswordHasher):
+    """The production PasswordHasher with cheap argon2 parameters (m=64, t=2)."""
+
+    def __init__(self) -> None:
+        self._hasher = PasswordHash(
+            (Argon2Hasher(time_cost=2, memory_cost=64, parallelism=1),)
+        )
+        self._dummy_hash = self._hasher.hash("dummy")
+
+
+def auth_headers(client: TestClient, email: str) -> dict[str, str]:
+    """Register the user (if new), log in and return the Authorization header."""
+    client.post("/auth/register", json={"email": email, "password": PASSWORD})
+    login = client.post("/auth/login", json={"email": email, "password": PASSWORD})
+    assert login.status_code == 200, login.text
+    return {"Authorization": f"Bearer {login.json()['access_token']}"}
 
 
 def rpc_error(code: grpc.StatusCode, details: str = "") -> AioRpcError:

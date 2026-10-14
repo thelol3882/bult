@@ -4,6 +4,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
+from app.auth.deps import CurrentUser
 from app.core.pagination import CursorPage, CursorParams, decode_cursor, encode_cursor
 from app.deploys.deps import DeployServiceDep
 from app.deploys.schemas.deploys import DeployOut
@@ -12,16 +13,21 @@ router = APIRouter(prefix="/apps/{name}/deploys", tags=["deploys"])
 
 
 @router.post("", status_code=status.HTTP_202_ACCEPTED, response_model=DeployOut)
-async def start_deploy(name: str, service: DeployServiceDep) -> DeployOut:
-    return DeployOut.model_validate(await service.start(name))
+async def start_deploy(
+    name: str, service: DeployServiceDep, user: CurrentUser
+) -> DeployOut:
+    return DeployOut.model_validate(await service.start(name, user))
 
 
 @router.get("", response_model=CursorPage[DeployOut])
 async def get_history(
-    name: str, service: DeployServiceDep, params: Annotated[CursorParams, Query()]
+    name: str,
+    service: DeployServiceDep,
+    user: CurrentUser,
+    params: Annotated[CursorParams, Query()],
 ) -> CursorPage[DeployOut]:
     before = decode_cursor(params.cursor) if params.cursor else None
-    rows = await service.history(name, before, params.limit + 1)
+    rows = await service.history(name, before, params.limit + 1, user)
     has_more = len(rows) > params.limit
     page = rows[: params.limit]
 
@@ -37,5 +43,7 @@ async def get_history(
 
 
 @router.get("/{deploy_id}", response_model=DeployOut)
-async def get_deploy(name: str, deploy_id: str, service: DeployServiceDep) -> DeployOut:
-    return DeployOut.model_validate(await service.get(name, deploy_id))
+async def get_deploy(
+    name: str, deploy_id: str, service: DeployServiceDep, user: CurrentUser
+) -> DeployOut:
+    return DeployOut.model_validate(await service.get(name, deploy_id, user))

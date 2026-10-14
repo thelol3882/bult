@@ -1,5 +1,7 @@
 """AppRepository on PostgreSQL: ORM rows in, App dataclasses out."""
 
+from uuid import UUID
+
 from sqlalchemy import CursorResult, delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,6 +22,7 @@ class SqlAppRepository:
             branch=app.branch,
             repo_url=app.repo_url,
             subdir=app.subdir,
+            owner_id=app.owner_id,
         )
         self._session.add(model)
         try:
@@ -49,13 +52,19 @@ class SqlAppRepository:
 
         return _to_domain(updated_row)
 
-    async def count(self) -> int:
-        result = await self._session.execute(select(func.count()).select_from(AppModel))
+    async def count(self, owner_id: UUID) -> int:
+        result = await self._session.execute(
+            select(func.count()).select_from(AppModel).where(AppModel.owner_id == owner_id)
+        )
         return result.scalar_one()
 
-    async def list(self, offset: int, limit: int) -> list[App]:
+    async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]:
         rows = await self._session.scalars(
-            select(AppModel).order_by(AppModel.name).offset(offset).limit(limit)
+            select(AppModel)
+            .where(AppModel.owner_id == owner_id)
+            .order_by(AppModel.name)
+            .offset(offset)
+            .limit(limit)
         )
         result: list[App] = []
         for row in rows.all():
@@ -80,5 +89,6 @@ def _to_domain(row: AppModel) -> App:
         repo_url=row.repo_url,
         branch=row.branch,
         subdir=row.subdir,
+        owner_id=row.owner_id,
         created_at=row.created_at,
     )

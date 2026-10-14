@@ -17,6 +17,7 @@ class App:
     repo_url: str
     branch: str
     subdir: str
+    owner_id: UUID | None = None
     id: UUID | None = None
     created_at: datetime | None = None
 
@@ -27,8 +28,8 @@ class AppRepository(Protocol):
     async def add(self, app: App) -> App: ...
     async def get(self, name: str) -> App | None: ...
     async def update(self, name: str, **changes) -> App | None: ...
-    async def count(self) -> int: ...
-    async def list(self, offset: int, limit: int) -> list[App]: ...
+    async def count(self, owner_id: UUID) -> int: ...
+    async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]: ...
     async def delete(self, name: str) -> bool:
         """True if the app existed."""
         ...
@@ -57,13 +58,17 @@ class InMemoryAppRepository:
         self._apps[name] = updated_app
         return updated_app
 
-    async def count(self) -> int:
-        return len(self._apps)
+    def _owned(self, owner_id: UUID) -> list[App]:
+        return [a for a in self._apps.values() if a.owner_id == owner_id]
 
-    async def list(self, offset: int, limit: int) -> list[App]:
-        return sorted(self._apps.values(), key=lambda a: a.name)[
+    async def count(self, owner_id: UUID) -> int:
+        return len(self._owned(owner_id))
+
+    async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]:
+        return sorted(self._owned(owner_id), key=lambda a: a.name)[
             offset : offset + limit
         ]
+
 
     async def delete(self, name: str) -> bool:
         return self._apps.pop(name, None) is not None

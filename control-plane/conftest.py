@@ -1,20 +1,33 @@
 """Shared fixtures for tests/ and app/<domain>/tests/."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from pydantic import SecretStr
 
 from app.apps.deps import get_apps_uow_factory
 from app.apps.uow import InMemoryAppsUoW
+from app.auth.deps import get_auth_uow_factory
+from app.auth.services.tokens import TokenIssuer
+from app.auth.uow import InMemoryAuthUoW
 from app.core.config import Settings
 from app.core.deps import get_agents, get_routes, get_settings
 from app.deploys.deps import get_deploys_uow_factory
 from app.deploys.uow import InMemoryDeploysUoW
 from app.main import create_app
-from tests.fakes import DOMAIN, RUNNERS, TRUSTED_PROXY, FakeAgentClients, FakeRoutes
+from tests.fakes import (
+    DOMAIN,
+    RUNNERS,
+    TEST_JWT_SECRET,
+    TRUSTED_PROXY,
+    CheapPasswordHasher,
+    FakeAgentClients,
+    FakeRoutes,
+    auth_headers,
+)
 
 TEST_DATABASE_URL = "postgresql+asyncpg://test/test"
 
@@ -32,6 +45,8 @@ def settings(tmp_path: Path) -> Settings:
         trusted_proxy=TRUSTED_PROXY,
         ingress_dir=str(tmp_path / "routes"),
         database_url=TEST_DATABASE_URL,
+        jwt_secret=SecretStr(TEST_JWT_SECRET),
+        jwt_ttl_seconds=86400,
     )
 
 
@@ -47,6 +62,11 @@ def deploys_uow() -> InMemoryDeploysUoW:
 
 
 @pytest.fixture
+def auth_uow() -> InMemoryAuthUoW:
+    return InMemoryAuthUoW()
+
+
+@pytest.fixture
 def agents() -> FakeAgentClients:
     """Agents that never fail."""
     return FakeAgentClients()
@@ -58,6 +78,7 @@ def app(
     tmp_path: Path,
     apps_uow: InMemoryAppsUoW,
     deploys_uow: InMemoryDeploysUoW,
+    auth_uow: InMemoryAuthUoW,
     routes: FakeRoutes,
     settings: Settings,
     agents: FakeAgentClients,
@@ -68,6 +89,7 @@ def app(
     monkeypatch.setenv("BULT_TRUSTED_PROXY", TRUSTED_PROXY)
     monkeypatch.setenv("BULT_INGRESS_DIR", str(tmp_path / "lifespan-routes"))
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
+    monkeypatch.setenv("BULT_JWT_SECRET", TEST_JWT_SECRET)
 
     def apps_uow_factory() -> InMemoryAppsUoW:
         return apps_uow
@@ -75,7 +97,15 @@ def app(
     def deploys_uow_factory() -> InMemoryDeploysUoW:
         return deploys_uow
 
+    def auth_uow_factory() -> InMemoryAuthUoW:
+        return auth_uow
+
     application = create_app()
+    application.state.auth_uow_factory = auth_uow_factory
+    application.state.password_hasher = CheapPasswordHasher()
+    application.state.token_issuer = TokenIssuer(
+        TEST_JWT_SECRET, settings.jwt_ttl_seconds
+    )
     application.state.apps_uow_factory = apps_uow_factory
     application.state.deploys_uow_factory = deploys_uow_factory
     application.state.deploy_tasks = set()
@@ -86,6 +116,7 @@ def app(
     application.dependency_overrides[get_deploys_uow_factory] = lambda: (
         deploys_uow_factory
     )
+    application.dependency_overrides[get_auth_uow_factory] = lambda: auth_uow_factory
     application.dependency_overrides[get_routes] = lambda: routes
     application.dependency_overrides[get_settings] = lambda: settings
     application.dependency_overrides[get_agents] = lambda: agents
@@ -94,6 +125,28 @@ def app(
 
 
 @pytest.fixture
-def client(app: FastAPI) -> TestClient:
-    """In-process client without a lifespan."""
+def anon_client(app: FastAPI) -> TestClient:
+    """In-process client without a lifespan and without credentials."""
     return TestClient(app)
+
+
+@pytest.fixture
+def make_client(app: FastAPI) -> Callable[[str], TestClient]:
+    """make_client(email) -> client logged in as that user (registered on first use)."""
+
+    def _make(email: str) -> TestClient:
+        return TestClient(app, headers=auth_headers(TestClient(app), email))
+
+    return _make
+
+
+@pytest.fixture
+def client(make_client: Callable[[str], TestClient]) -> TestClient:
+    """Client logged in as alice."""
+    return make_client("alice@example.com")
+
+
+@pytest.fixture
+def bob(make_client: Callable[[str], TestClient]) -> TestClient:
+    """Client logged in as a second user."""
+    return make_client("bob@example.com")

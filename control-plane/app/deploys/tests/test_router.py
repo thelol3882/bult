@@ -8,7 +8,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.deps import get_agents
-from tests.fakes import FakeAgentClients, rpc_error
+from tests.fakes import FakeAgentClients, auth_headers, rpc_error
 
 APP_BODY = {
     "name": "blog",
@@ -28,6 +28,7 @@ def client_for(app: FastAPI):
     def _make(agents: FakeAgentClients) -> TestClient:
         app.dependency_overrides[get_agents] = lambda: agents
         client = stack.enter_context(TestClient(app))
+        client.headers.update(auth_headers(client, "alice@example.com"))
         response = client.post("/apps", json=APP_BODY)
         assert response.status_code == 201, response.text
         return client
@@ -54,6 +55,7 @@ def test_start_deploy_accepted(client_for):
 
 def test_get_deploy_of_another_app_is_404(client_for):
     client = client_for(FakeAgentClients())
+    client.post("/apps", json={**APP_BODY, "name": "other"})
     deploy_id = client.post("/apps/blog/deploys").json()["id"]
 
     response = client.get(f"/apps/other/deploys/{deploy_id}")

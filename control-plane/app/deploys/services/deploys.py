@@ -15,6 +15,7 @@ from app.apps.services.facade import AppsFacade
 from app.core.config import Settings
 from app.core.error_codes import ErrorCode
 from app.core.errors import InternalError, NotFoundError, ServiceUnavailableError
+from app.core.principal import Principal
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.runner import remove_replica_quietly, run_deploy
 from app.deploys.uow import DeploysUoW
@@ -73,9 +74,9 @@ class DeployService:
         self._settings = settings
         self._tasks = tasks
 
-    async def start(self, app_name: str) -> Deploy:
+    async def start(self, app_name: str, principal: Principal) -> Deploy:
         """Start the build on the builder, then run the rest in a background task."""
-        app = await self._apps.get_app(app_name)
+        app = await self._apps.get_app(app_name, principal)
 
         # The id is generated before the call so a retry reaches the same job.
         deploy_id = uuid.uuid4().hex
@@ -130,8 +131,9 @@ class DeployService:
 
         return deploy
 
-    async def get(self, app_name: str, deploy_id: str) -> Deploy:
+    async def get(self, app_name: str, deploy_id: str, principal: Principal) -> Deploy:
         """DeployNotFoundError if missing OR if it belongs to another app."""
+        await self._apps.get_app(app_name, principal)
         async with self._uow_factory() as uow:
             deploy = await uow.deploys.get(deploy_id)
             if deploy is None or deploy.app_name != app_name:
@@ -139,9 +141,13 @@ class DeployService:
             return deploy
 
     async def history(
-        self, app_name: str, before: tuple[datetime, str] | None, limit: int
+        self,
+        app_name: str,
+        before: tuple[datetime, str] | None,
+        limit: int,
+        principal: Principal,
     ) -> list[Deploy]:
-        await self._apps.get_app(app_name)
+        await self._apps.get_app(app_name, principal)
         async with self._uow_factory() as uow:
             return await uow.deploys.list_for_app(app_name, before, limit)
 

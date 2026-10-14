@@ -25,6 +25,27 @@ forbidden_modules =
 # deploys -> facade -> services.apps is the intended path, so indirect imports are fine.
 allow_indirect_imports = True
 
+[importlinter:contract:domains-use-auth-in-routers-only]
+name = Apps and deploys know auth only in their routers (CurrentUser); services get a Principal
+type = forbidden
+source_modules =
+    app.apps
+    app.deploys
+forbidden_modules =
+    app.auth
+ignore_imports =
+    app.apps.routers.apps -> app.auth.deps
+    app.deploys.routers.deploys -> app.auth.deps
+
+[importlinter:contract:auth-independent]
+name = The auth domain knows nothing about apps or deploys
+type = forbidden
+source_modules =
+    app.auth
+forbidden_modules =
+    app.apps
+    app.deploys
+
 [importlinter:contract:routers-skip-repositories]
 name = Routers never import repositories
 type = forbidden
@@ -43,10 +64,12 @@ type = forbidden
 source_modules =
     app.apps.services
     app.deploys.services
+    app.auth.services
     app.core.errors
     app.core.events
     app.apps.repositories
     app.deploys.repositories
+    app.auth.repositories
 forbidden_modules =
     fastapi
     starlette
@@ -97,6 +120,7 @@ type = forbidden
 source_modules =
     app.apps.services
     app.deploys.services
+    app.auth.services
     app.core.events
     app.core.errors
     app.deploys.handlers

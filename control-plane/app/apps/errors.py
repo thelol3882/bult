@@ -1,5 +1,5 @@
 from app.core.error_codes import ErrorCode
-from app.core.errors import ConflictError, NotFoundError
+from app.core.errors import ConflictError, ForbiddenError, NotFoundError
 
 
 class AppNameTakenError(ConflictError):
@@ -18,3 +18,12 @@ class AppNotFoundError(NotFoundError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"App '{name}' not found.")
+
+
+class AppForbiddenError(ForbiddenError):
+    """The app belongs to another user."""
+
+    code = ErrorCode.FORBIDDEN
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"You do not have access to app '{name}'.")

@@ -11,7 +11,7 @@ from app.apps.events import AppDeleted
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.uow import InMemoryDeploysUoW
 from app.ingress.routes import Route
-from tests.fakes import FakeAgentClients, FakeRoutes, rpc_error
+from tests.fakes import FakeAgentClients, FakeRoutes, auth_headers, rpc_error
 
 BODY = {
     "name": "blog",
@@ -129,7 +129,11 @@ def test_handler_failure_is_an_error_response_not_204(app: FastAPI):
         raise RuntimeError("cleanup exploded")
 
     app.state.event_bus.subscribe(AppDeleted, boom)
-    client = TestClient(app, raise_server_exceptions=False)
+    client = TestClient(
+        app,
+        raise_server_exceptions=False,
+        headers=auth_headers(TestClient(app), "alice@example.com"),
+    )
     _create(client, "blog")
 
     resp = client.delete("/apps/blog")

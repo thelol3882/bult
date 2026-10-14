@@ -15,6 +15,7 @@ def make_settings(**overrides) -> Settings:
         "runners": {},
         "trusted_proxy": "10.0.0.1",
         "database_url": "postgresql+asyncpg://test/test",
+        "jwt_secret": "s" * 32,
     } | overrides
     return Settings(**values)
 

@@ -14,7 +14,7 @@ Goal of the pattern: **easy to change**. A typical change should touch one domai
 
 ```
 app/
-  core/           config.py (pydantic-settings), errors.py, error_codes.py,
+  core/           config.py (pydantic-settings), errors.py, error_codes.py, principal.py (Principal),
                   exception_handlers.py, logging.py, deps.py (settings, agents, routes, event collector),
                   events.py (in-process event bus)
   apps/
@@ -27,6 +27,7 @@ app/
     deps.py       Depends wiring for this domain
   deploys/        same shape; services/runner.py is the deploy saga orchestrator;
                   handlers.py = subscribers of other domains' events: thin entry points like routers, call services only (wired in main.py only)
+  auth/           users, argon2 passwords, JWT access tokens; same layer folders; deps.py exports `CurrentUser`
   agents/         infrastructure: gRPC clients to node agents
   ingress/        infrastructure: route versions shared with the nginx sidecar
   main.py
@@ -47,6 +48,14 @@ app/
 6. **Typed inputs:** services take Pydantic input models or explicit arguments, never raw `dict`s. Repositories return domain objects, not query builders.
 7. **Settings:** `pydantic-settings`, prefix `BULT_`; secrets as `SecretStr`. Derived values that depend on settings (e.g. an app's public URL) are computed by services, not by schemas.
 8. **Tests next to the domain** (`app/<domain>/tests/`); shared fixtures and cross-domain tests in `control-plane/tests/`. In-memory repositories double as test fakes.
+9. **Authentication and ownership:**
+   - `auth` resolves a bearer token to a `core.principal.Principal(id, email)`: a frozen dataclass with no FastAPI or auth internals, so services of any domain can take it. Routers get it from `app.auth.deps.CurrentUser`; every `/apps…` route requires it, only `/healthz` and `/auth/register|login` are public.
+   - `apps` and `deploys` import `app.auth` only in their **routers** (for `CurrentUser`); services and repositories receive the `Principal` as an argument. `auth` imports neither domain.
+   - **Ownership is checked in the service layer.** `apps.owner_id` is set on create from the principal. `AppService` loads the app and raises `AppNotFoundError` (404) or `AppForbiddenError` (403, `code: "forbidden"`) in one helper; deploys call `AppsFacade.get_app(name, principal)` before doing anything. `GET /apps` returns, and counts, only the caller's apps.
+   - **403, not 404, for another user's app:** app names are global subdomains, so existence is public anyway; hiding it would only hide the reason from the user.
+   - `DeployService.remove_app` (the `AppDeleted` handler) is a system action: the DELETE that published the event already checked ownership.
+   - **`apps.owner_id` is `ForeignKey("users.id", ondelete="RESTRICT")`** (by table name, so `apps` does not import the auth model). A cascade would delete app rows while their replicas keep running on the nodes; a user with apps cannot be deleted until the apps are.
+   - Import contracts: apps/deploys → auth only via routers; auth → apps/deploys forbidden; `auth.services`/`auth.repositories` stay free of FastAPI/Starlette and `auth.services` of sqlalchemy.
 
 ## Alternatives considered
 
@@ -61,6 +70,8 @@ app/
 | Event bus, fire-and-forget (`create_task`) | the client gets 204 while cleanup may still fail unseen; tests need sleeps |
 | Event bus, delivered before commit | a handler may act on data that is later rolled back |
 | **Event bus, queued and drained synchronously after commit (chosen)** | control flow is hidden but small: one subscription list in `main.py`, one drain point; failures are visible in the response and tests are deterministic |
+| 404 for another user's app | names are public subdomains; a uniform 404 adds no secrecy and makes "is it mine?" harder to debug |
+| `ON DELETE CASCADE` from users to apps | orphans replicas running on the nodes |
 | Facade only for heavy domains | chosen against by the owner: a facade per domain from the start keeps the rule uniform |
 
 ## Consequences
