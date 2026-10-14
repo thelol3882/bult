@@ -23,3 +23,9 @@ class ErrorCode(StrEnum):
 
     # pagination
     INVALID_CURSOR = "invalid_cursor"
+
+    # auth
+    NOT_AUTHENTICATED = "not_authenticated"
+    FORBIDDEN = "forbidden"
+    INVALID_CREDENTIALS = "invalid_credentials"
+    EMAIL_TAKEN = "email_taken"

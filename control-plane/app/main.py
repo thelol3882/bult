@@ -12,6 +12,10 @@ from app.apps.events import AppDeleted
 from app.apps.public import build_apps_facade
 from app.apps.routers import apps as apps_router
 from app.apps.uow import sql_apps_uow_factory
+from app.auth.routers import auth as auth_router
+from app.auth.services.passwords import PasswordHasher
+from app.auth.services.tokens import TokenIssuer
+from app.auth.uow import sql_auth_uow_factory
 from app.core import exception_handlers
 from app.core.config import Settings
 from app.core.db import create_engine, create_session_factory
@@ -30,14 +34,26 @@ async def lifespan(app: FastAPI):
     """Create long-lived resources once the event loop exists; close them on shutdown."""
     settings = Settings()  # pyright: ignore[reportCallIssue]
     app.state.settings = settings
+
     app.state.agents = AgentClients(settings.builder, settings.runners)
     app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
+
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     app.state.db_engine = engine
+
     app.state.apps_uow_factory = sql_apps_uow_factory(session_factory)
+
     app.state.deploys_uow_factory = sql_deploys_uow_factory(session_factory)
     app.state.deploy_tasks = set()
+
+    app.state.auth_uow_factory = sql_auth_uow_factory(session_factory)
+    app.state.password_hasher = PasswordHasher()
+    app.state.token_issuer = TokenIssuer(
+        secret=settings.jwt_secret.get_secret_value(),
+        ttl_seconds=settings.jwt_ttl_seconds,
+    )
+
     yield
 
     tasks = app.state.deploy_tasks
@@ -88,6 +104,7 @@ def create_app() -> FastAPI:
     exception_handlers.register(app)
 
     app.include_router(health.router)
+    app.include_router(auth_router.router)
     app.include_router(apps_router.router)
     app.include_router(deploys_router.router)
 

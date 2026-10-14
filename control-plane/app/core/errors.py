@@ -41,3 +41,13 @@ class ServiceUnavailableError(AppError):
 class InternalError(AppError):
     status = 500
     code = ErrorCode.INTERNAL_ERROR
+
+
+class UnauthorizedError(AppError):
+    status = 401
+    code = ErrorCode.NOT_AUTHENTICATED
+
+
+class ForbiddenError(AppError):
+    status = 403
+    code = ErrorCode.FORBIDDEN

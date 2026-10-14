@@ -7,7 +7,7 @@ every problem, so the API refuses to start instead of failing on the first reque
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -25,6 +25,8 @@ class Settings(BaseSettings):
     apps_scheme: Literal["http", "https"] = "http"  # ingress serves plain HTTP today
     apps_domain: str = "bult.localhost"  # apps live at <name>.<apps_domain>
     database_url: str = Field(validation_alias="DATABASE_URL")
+    jwt_secret: SecretStr = Field(min_length=32)
+    jwt_ttl_seconds: int = 86400
 
     @field_validator("runners", mode="before")
     @classmethod

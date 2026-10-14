@@ -4,7 +4,6 @@ from sqlalchemy import MetaData
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
-
 # Predictable constraint names, so later migrations can refer to them.
 NAMING_CONVENTION = {
     "ix": "ix_%(column_0_label)s",

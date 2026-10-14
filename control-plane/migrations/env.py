@@ -8,6 +8,7 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from app.apps.models.apps import AppModel  # noqa: F401  (registers the table)
+from app.auth.models.users import UserModel  # noqa: F401 (registers the table)
 from app.core.db import Base
 from app.deploys.models.deploys import DeployModel  # noqa: F401  (registers the table)
 

@@ -16,6 +16,7 @@ services:
       BULT_RUNNERS: "bult-node-1=192.168.252.6:50051"
       BULT_TRUSTED_PROXY: "192.168.252.1"
       BULT_INGRESS_DIR: "/routes"
+      BULT_JWT_SECRET: "67b36330715b07a791b806e0b6103264e5b96d65f33e7728d580f51336a4feb0"
     volumes:
       - ./app:/app/app
       - ./gen:/app/gen:ro
