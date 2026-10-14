@@ -17,6 +17,9 @@ Configuration (environment variables, all optional):
     BULT_REGISTRY      registry address for builds  (default: 192.168.252.1:5050)
     BULT_GOARCH        node CPU architecture        (default: this machine's — Multipass VMs match the host)
     BULT_GO_DOCKER=1   build/test the agent in Docker even if `go` is installed
+    DATABASE_URL       database for the db-* commands (default: the compose Postgres on localhost)
+
+Control plane commands need `uv`; they start the compose Postgres when it is not running.
 """
 
 from __future__ import annotations
@@ -36,6 +39,9 @@ ROOT = Path(__file__).resolve().parent.parent
 AGENT_DIR = ROOT / "agent"
 AGENT_BIN = AGENT_DIR / "bin" / "bultd"
 AGENT_UNIT = ROOT / "deploy" / "systemd" / "bultd.service"
+CP_DIR = ROOT / "control-plane"
+# The compose Postgres as seen from the host (inside compose the host is `postgres`).
+LOCAL_DATABASE_URL = "postgresql+asyncpg://bult:bult@localhost:5432/bult"
 
 # Keep in sync with the `go` line of agent/go.mod.
 GO_IMAGE = "golang:1.27"
@@ -69,10 +75,18 @@ GOARCH = os.environ.get("BULT_GOARCH") or host_goarch()
 # --- helpers --------------------------------------------------------------
 
 
-def run(cmd: list[str], *, cwd: Path | None = None, check: bool = True, capture: bool = False) -> str:
+def run(
+    cmd: list[str],
+    *,
+    cwd: Path | None = None,
+    check: bool = True,
+    capture: bool = False,
+    env: dict[str, str] | None = None,
+) -> str:
     """Run a command, echo it, stop the script on failure."""
-    print("$", " ".join(cmd), flush=True)
-    result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=capture)
+    print("$", *(f"{k}={v}" for k, v in (env or {}).items()), " ".join(cmd), flush=True)
+    full_env = {**os.environ, **env} if env else None
+    result = subprocess.run(cmd, cwd=cwd, text=True, capture_output=capture, env=full_env)
     if check and result.returncode != 0:
         if capture and result.stderr:
             print(result.stderr, file=sys.stderr)
@@ -130,12 +144,42 @@ def running_nodes() -> list[str]:
     return running
 
 
-def node_sh(node: str, script: str, *, sudo: bool = True, capture: bool = False) -> str:
+def node_sh(node: str, script: str, *, sudo: bool = True, capture: bool = False, check: bool = True) -> str:
     """Run a shell snippet on a node (always /bin/sh on the VM, whatever the host shell is)."""
     cmd = ["multipass", "exec", node, "--"]
     if sudo:
         cmd.append("sudo")
-    return run([*cmd, "sh", "-c", script], capture=capture)
+    return run([*cmd, "sh", "-c", script], capture=capture, check=check)
+
+
+def node_reachable(node: str) -> bool:
+    """False when `multipass exec` cannot reach the VM (e.g. no macOS Local Network permission)."""
+    result = subprocess.run(["multipass", "exec", node, "--", "true"], capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"!! {node}: unreachable ({result.stderr.strip() or 'exec failed'}), skipped", file=sys.stderr)
+        return False
+    return True
+
+
+def database_url() -> str:
+    return os.environ.get("DATABASE_URL", LOCAL_DATABASE_URL)
+
+
+def ensure_postgres() -> None:
+    """Start the compose Postgres (no-op when it is running) and wait until it is healthy."""
+    if "DATABASE_URL" in os.environ:
+        return  # someone else's database: do not touch compose
+    run(["docker", "compose", "up", "-d", "--wait", "postgres"], cwd=ROOT)
+
+
+def uv(args: list[str], *, env: dict[str, str] | None = None) -> None:
+    """`uv run …` in control-plane/."""
+    run(["uv", "run", *args], cwd=CP_DIR, env=env)
+
+
+def alembic(args: list[str]) -> None:
+    ensure_postgres()
+    uv(["alembic", *args], env={"DATABASE_URL": database_url()})
 
 
 # --- commands -------------------------------------------------------------
@@ -271,7 +315,7 @@ def cmd_demo_up(_: argparse.Namespace) -> None:
 def cmd_demo_down(args: argparse.Namespace) -> None:
     """Stop everything after a demo: app replicas, the host stack, node VMs (--wipe: forget all state)."""
     for node in running_nodes():
-        if node == BUILDER_NODE:
+        if node == BUILDER_NODE or not node_reachable(node):
             continue
         node_sh(node, "ids=$(docker ps -aq --filter label=bult.managed=true); "
                       '[ -z "$ids" ] || docker rm -f $ids')
@@ -284,6 +328,59 @@ def cmd_demo_down(args: argparse.Namespace) -> None:
     else:
         run(["docker", "compose", "stop"], cwd=ROOT)
     run(["multipass", "stop", *DEMO_NODES])
+
+
+# --- control plane --------------------------------------------------------
+
+
+def cmd_db_up(_: argparse.Namespace) -> None:
+    """Start only the compose Postgres and wait until it is healthy."""
+    ensure_postgres()
+
+
+def cmd_migrate(args: argparse.Namespace) -> None:
+    """alembic upgrade (default: head) against the local database."""
+    alembic(["upgrade", args.revision])
+
+
+def cmd_makemigrations(args: argparse.Namespace) -> None:
+    """alembic revision --autogenerate: migrate to head first, then diff the models against the DB."""
+    alembic(["upgrade", "head"])
+    alembic(["revision", "--autogenerate", "-m", args.message])
+    print("\nread the new file in control-plane/migrations/versions/ before `migrate`")
+
+
+def cmd_downgrade(args: argparse.Namespace) -> None:
+    """alembic downgrade (default: one step back)."""
+    alembic(["downgrade", args.revision])
+
+
+def cmd_db_status(_: argparse.Namespace) -> None:
+    """Current revision, the migration history, and whether the models match the DB."""
+    alembic(["current"])
+    alembic(["history", "--indicate-current"])
+    alembic(["check"])
+
+
+def cmd_db_shell(_: argparse.Namespace) -> None:
+    """psql inside the compose Postgres."""
+    ensure_postgres()
+    run(["docker", "compose", "exec", "postgres", "psql", "-U", "bult", "-d", "bult"], cwd=ROOT)
+
+
+def cmd_cp_test(args: argparse.Namespace) -> None:
+    """Control plane unit tests (pass extra pytest args after --, e.g. -- -k auth)."""
+    extra = args.pytest_args[1:] if args.pytest_args[:1] == ["--"] else args.pytest_args
+    uv(["pytest", "-q", *extra])
+
+
+def cmd_cp_check(_: argparse.Namespace) -> None:
+    """Full check: unit + integration tests, basedpyright, import-linter."""
+    ensure_postgres()
+    uv(["pytest", "-q"])
+    uv(["pytest", "-q", "-m", "integration"])
+    run(["uvx", "basedpyright", "app", "tests"], cwd=CP_DIR)
+    uv(["lint-imports"])
 
 
 COMMANDS = {
@@ -302,6 +399,14 @@ COMMANDS = {
     "down": cmd_down,
     "demo-up": cmd_demo_up,
     "demo-down": cmd_demo_down,
+    "db-up": cmd_db_up,
+    "migrate": cmd_migrate,
+    "makemigrations": cmd_makemigrations,
+    "downgrade": cmd_downgrade,
+    "db-status": cmd_db_status,
+    "db-shell": cmd_db_shell,
+    "cp-test": cmd_cp_test,
+    "cp-check": cmd_cp_check,
 }
 
 
@@ -316,6 +421,14 @@ def main() -> None:
         if name == "agent-logs":
             p.add_argument("node", help="node VM name, e.g. bult-builder")
             p.add_argument("-n", "--lines", type=int, default=50)
+        if name == "migrate":
+            p.add_argument("revision", nargs="?", default="head")
+        if name == "downgrade":
+            p.add_argument("revision", nargs="?", default="-1")
+        if name == "makemigrations":
+            p.add_argument("-m", "--message", required=True, help='e.g. "users"')
+        if name == "cp-test":
+            p.add_argument("pytest_args", nargs=argparse.REMAINDER)
         p.set_defaults(func=func)
     args = parser.parse_args()
     args.func(args)
