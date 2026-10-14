@@ -10,6 +10,8 @@ services:
             - '127.0.0.1:3000:3000'
         environment:
             API_INTERNAL_URL: http://api:8000
+            # Dev-only value; production must set its own random 32+ char secret.
+            SESSION_SECRET: dev-only-session-secret-change-me-0123456789
             WATCHPACK_POLLING: 'true'
             NEXT_TELEMETRY_DISABLED: '1'
         volumes:

@@ -46,7 +46,9 @@ docker compose up web      # from the repo root, dev server with the API
 
 ## API access
 
-The browser only calls `/api/*`. A Next.js rewrite proxies it to `${API_INTERNAL_URL}` (default `http://localhost:8000`, `http://api:8000` in compose), so there is no CORS. RTK Query `baseUrl` is `/api`. Rewrites are baked in at `next build`: for the production image pass `--build-arg API_INTERNAL_URL=...`; `next dev` reads the variable at start.
+The browser only calls `/api/*`, a route handler (`src/app/api/[...path]`) that forwards to `${API_INTERNAL_URL}` (read at runtime; default `http://localhost:8000`, `http://api:8000` in compose) and adds `Authorization: Bearer` from the session, so there is no CORS. RTK Query `baseUrl` is `/api`.
+
+Auth is a BFF: `/bff/auth/{login,register,logout,session}` talk to the API and keep the access token only in an encrypted httpOnly iron-session cookie, never in browser JS. `SESSION_SECRET` (32+ chars) is required.
 
 ## Design
 

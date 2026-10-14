@@ -4,7 +4,8 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AppShell } from '@mantine/core';
-import { IconApps, IconChevronRight } from '@tabler/icons-react';
+import { IconApps, IconChevronRight, IconLogout } from '@tabler/icons-react';
+import { useLogout } from '@/features/auth';
 import { Logo } from '@/shared/components';
 import classes from './DashboardShell.module.css';
 
@@ -15,7 +16,8 @@ function crumbsFor(pathname: string): string[] {
     return ['Apps', decodeURIComponent(rest)];
 }
 
-export function DashboardShell({ children }: { children: ReactNode }) {
+export function DashboardShell({ children, email }: { children: ReactNode; email: string }) {
+    const logout = useLogout();
     const pathname = usePathname();
     const crumbs = crumbsFor(pathname);
     const isApps = pathname.startsWith('/apps') || pathname === '/new';
@@ -38,6 +40,20 @@ export function DashboardShell({ children }: { children: ReactNode }) {
                         Apps
                     </Link>
                 </nav>
+                <div className={classes.user}>
+                    <span className={classes.email} title={email}>
+                        {email}
+                    </span>
+                    <button
+                        type="button"
+                        className={classes.logout}
+                        onClick={() => void logout()}
+                        aria-label="Log out"
+                        title="Log out"
+                    >
+                        <IconLogout size={18} stroke={1.75} />
+                    </button>
+                </div>
             </AppShell.Navbar>
 
             <AppShell.Header className={classes.header}>

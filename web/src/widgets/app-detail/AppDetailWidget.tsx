@@ -12,7 +12,7 @@ import {
     IconTrash,
 } from '@tabler/icons-react';
 import { AppDetailsCard, EditAppModal, useDeleteApp, useGetAppQuery } from '@/features/apps';
-import { BackendUnavailablePage, NotFoundPage } from '@/features/error';
+import { BackendUnavailablePage, ForbiddenPage, NotFoundPage } from '@/features/error';
 import {
     DeployCard,
     DeployHistory,
@@ -54,6 +54,7 @@ export function AppDetailWidget({ name }: { name: string }) {
     if (error || !app) {
         const apiError = normalizeError(error);
         if (apiError.status === 404) return <NotFoundPage />;
+        if (apiError.status === 403) return <ForbiddenPage />;
         if (apiError.status === 'network') return <BackendUnavailablePage onRetry={refetch} />;
         return (
             <EmptyState

@@ -1,4 +1,6 @@
 .navbar {
+    display: flex;
+    flex-direction: column;
     padding: 16px 12px;
     border-right: 1px solid var(--slate-2);
     background: #fff;
@@ -85,4 +87,42 @@
 .content {
     max-width: calc(var(--content-max) + 64px);
     padding: 32px;
+}
+
+.user {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: auto;
+    padding: 12px 8px 0;
+    border-top: 1px solid var(--slate-2);
+}
+
+.email {
+    min-width: 0;
+    flex: 1;
+    overflow: hidden;
+    color: var(--slate-7);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.logout {
+    display: inline-flex;
+    width: 32px;
+    height: 32px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    border-radius: var(--radius-md);
+    background: transparent;
+    color: var(--slate-6);
+    cursor: pointer;
+}
+
+.logout:hover {
+    background: var(--slate-1);
+    color: var(--slate-9);
 }

@@ -12,15 +12,13 @@ ENV COREPACK_ENABLE_STRICT=1 NEXT_TELEMETRY_DISABLED=1
 RUN corepack enable
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# next.config.ts rewrites() are baked into routes-manifest.json at build time,
-# so the API address of the image is fixed here (override with --build-arg).
-ARG API_INTERNAL_URL=http://api:8000
-ENV API_INTERNAL_URL=$API_INTERNAL_URL
 RUN pnpm build
 
 FROM node:22-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 \
+    API_INTERNAL_URL=http://api:8000
+# SESSION_SECRET (32+ chars) must be provided at run time.
 RUN addgroup -S -g 1001 nodejs && adduser -S -u 1001 -G nodejs nextjs
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
