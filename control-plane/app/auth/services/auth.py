@@ -25,7 +25,7 @@ class AuthService:
 
     async def register(self, data: RegisterIn) -> User:
         email = data.email.lower()
-        password_hash = self._hasher.hash(data.password)
+        password_hash = await self._hasher.hash(data.password)
 
         async with self._uow_factory() as uow:
             user = await uow.users.add(User(email=email, password_hash=password_hash))
@@ -40,10 +40,10 @@ class AuthService:
             user = await uow.users.get_by_email(email)
 
         if user is None:
-            self._hasher.burn(data.password)
+            await self._hasher.burn(data.password)
             raise InvalidCredentialsError()
 
-        ok, new_hash = self._hasher.verify(data.password, user.password_hash)
+        ok, new_hash = await self._hasher.verify(data.password, user.password_hash)
         if not ok:
             raise InvalidCredentialsError()
 
