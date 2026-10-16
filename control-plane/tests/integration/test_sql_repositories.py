@@ -3,7 +3,7 @@
 import asyncio
 import functools
 from collections.abc import Callable, Coroutine
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -19,6 +19,7 @@ from app.auth.errors import EmailTakenError
 from app.auth.repositories.users import User
 from app.auth.uow import SqlAuthUoW
 from app.core.db import create_engine, create_session_factory
+from app.deploys.errors import DeployInProgressError
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.uow import SqlDeploysUoW
 
@@ -187,7 +188,8 @@ async def test_cursor_pages_with_equal_created_at_have_no_gaps_or_duplicates(
     async with factory() as session:
         for deploy_id, created_at in rows:
             await session.execute(
-                text("INSERT INTO deploys (id, app_name, created_at) VALUES (:i, 'hello', :c)"),
+                text("INSERT INTO deploys (id, app_name, status, created_at)"
+                    " VALUES (:i, 'hello', 'running', :c)"),
                 {"i": deploy_id, "c": created_at},
             )
         await session.commit()
@@ -276,3 +278,158 @@ async def test_deleting_a_user_who_owns_an_app_is_restricted(
     async with factory() as session:
         with pytest.raises(IntegrityError):
             await session.execute(text("DELETE FROM users WHERE id = :i"), {"i": owner})
+
+
+LEASE = timedelta(seconds=30)
+
+
+async def make_app_named(factory: async_sessionmaker, name: str, owner: UUID) -> None:
+    async with SqlAppsUoW(factory) as uow:
+        await uow.apps.add(make_app(owner, name))
+        await uow.commit()
+
+
+async def add_deploy(factory: async_sessionmaker, deploy: Deploy) -> None:
+    async with SqlDeploysUoW(factory) as uow:
+        await uow.deploys.add(deploy)
+        await uow.commit()
+
+
+@db_test
+async def test_second_active_deploy_violates_the_partial_unique_index(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await make_app_named(factory, "other", owner)
+    insert = text("INSERT INTO deploys (id, app_name, status) VALUES (:i, :a, :s)")
+
+    async def raw_insert(deploy_id: str, app: str, status: str) -> None:
+        async with factory() as session:
+            await session.execute(insert, {"i": deploy_id, "a": app, "s": status})
+            await session.commit()
+
+    await raw_insert("d1", "hello", "queued")
+    await raw_insert("d-other", "other", "queued")  # another app is fine
+    for status in ("queued", "building", "starting"):
+        with pytest.raises(IntegrityError):
+            await raw_insert("d2", "hello", status)
+
+    # Finished deploys are not work: any number of them, and a new active one after.
+    async with factory() as session:
+        await session.execute(text("UPDATE deploys SET status = 'running' WHERE id = 'd1'"))
+        await session.commit()
+    await raw_insert("d3", "hello", "failed")
+    await raw_insert("d4", "hello", "queued")
+
+
+@db_test
+async def test_second_active_deploy_is_deploy_in_progress(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(factory, Deploy(id="d1", app_name="hello"))
+
+    with pytest.raises(DeployInProgressError):
+        await add_deploy(factory, Deploy(id="d2", app_name="hello"))
+
+    async with SqlDeploysUoW(factory) as uow:
+        await uow.deploys.update("d1", status="running")
+        await uow.commit()
+    await add_deploy(factory, Deploy(id="d3", app_name="hello"))
+
+
+@db_test
+async def test_concurrent_claims_never_return_the_same_deploy(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    names = [f"app{i}" for i in range(6)]
+    for name in names:
+        await make_app_named(factory, name, owner)
+        await add_deploy(factory, Deploy(id=f"d-{name}", app_name=name))
+    now = datetime.now(UTC)
+
+    async def claim(worker: str) -> Deploy | None:
+        async with SqlDeploysUoW(factory) as uow:
+            deploy = await uow.deploys.claim(worker, LEASE, now)
+            await asyncio.sleep(0.05)  # keep the row lock while the others try
+            await uow.commit()
+            return deploy
+
+    claimed = await asyncio.gather(*(claim(f"w{i}") for i in range(4)))
+
+    ids = [d.id for d in claimed if d is not None]
+    assert len(ids) == 4
+    assert len(set(ids)) == 4  # SKIP LOCKED: nobody got a row another claim held
+    assert {d.attempts for d in claimed if d is not None} == {1}
+
+
+@db_test
+async def test_claim_order_expiry_and_attempts(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await make_app_named(factory, "other", owner)
+    await add_deploy(factory, Deploy(id="d-old", app_name="hello"))
+    await add_deploy(factory, Deploy(id="d-new", app_name="other"))
+    now = datetime.now(UTC)
+
+    async def claim(worker: str, at: datetime) -> Deploy | None:
+        async with SqlDeploysUoW(factory) as uow:
+            deploy = await uow.deploys.claim(worker, LEASE, at)
+            await uow.commit()
+            return deploy
+
+    first = await claim("w1", now)
+    second = await claim("w2", now)
+    assert first is not None and first.id == "d-old"
+    assert first.lease_owner == "w1"
+    assert first.lease_until is not None
+    assert second is not None and second.id == "d-new"
+    assert await claim("w3", now) is None  # both leases are alive
+
+    again = await claim("w3", now + LEASE + timedelta(seconds=1))
+    assert again is not None and again.id == "d-old"
+    assert again.attempts == 2
+    assert again.lease_owner == "w3"
+
+
+@db_test
+async def test_renew_and_update_owned_ignore_a_wrong_owner(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(factory, Deploy(id="d1", app_name="hello"))
+    now = datetime.now(UTC)
+    async with SqlDeploysUoW(factory) as uow:
+        claimed = await uow.deploys.claim("w1", LEASE, now)
+        await uow.commit()
+    assert claimed is not None and claimed.lease_until is not None
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.deploys.renew("d1", "w2", LEASE, now + LEASE) is False
+        assert await uow.deploys.update_owned("d1", "w2", status="running") is None
+        assert await uow.deploys.update_owned("nope", "w1", status="running") is None
+        await uow.commit()
+    async with SqlDeploysUoW(factory) as uow:
+        unchanged = await uow.deploys.get("d1")
+    assert unchanged is not None
+    assert unchanged.status == "queued"
+    assert unchanged.lease_until == claimed.lease_until
+
+    async with SqlDeploysUoW(factory) as uow:
+        later = now + timedelta(seconds=10)
+        assert await uow.deploys.renew("d1", "w1", LEASE, later) is True
+        changed = await uow.deploys.update_owned("d1", "w1", status="building")
+        await uow.commit()
+    assert changed is not None and changed.status == "building"
+    assert changed.lease_until == later + LEASE
+
+    async with SqlDeploysUoW(factory) as uow:
+        released = await uow.deploys.update_owned(
+            "d1", "w1", lease_until=None, attempts=0
+        )
+        await uow.commit()
+    assert released is not None
+    assert released.lease_until is None
+    assert released.attempts == 0

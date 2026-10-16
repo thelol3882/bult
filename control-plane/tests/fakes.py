@@ -1,8 +1,9 @@
 """Fakes shared by the tests of several domains."""
 
 from collections.abc import Awaitable, Callable
+from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import grpc
 from fastapi.testclient import TestClient
@@ -11,7 +12,10 @@ from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
 from app.agents.client import DeployResult, ReplicaInfo, ReplicaResult
+from app.apps.services.facade import App, AppNotFoundError, AppsFacade
 from app.auth.services.passwords import PasswordHasher
+from app.deploys.services.worker import DeployWorker
+from app.deploys.uow import InMemoryDeploysUoW
 from app.ingress.routes import Route, RouteWriter
 
 COMMIT_SHA = "0123abc"
@@ -78,7 +82,7 @@ class FakeAgentClients:
     ) -> None:
         self.start_error = start_error
         self.start_error_times = start_error_times
-        self.build_states = build_states or ["RUNNING"]
+        self.build_states: list[str | AioRpcError] = build_states or ["RUNNING"]
         self.run_error = run_error
         self.remove_error = remove_error
         self.on_run = on_run  # runs after a successful RunReplica
@@ -153,3 +157,58 @@ class FakeAgentClients:
 
     async def close(self) -> None:
         pass
+
+
+class FakeApps:
+    """The part of AppsFacade the worker uses."""
+
+    def __init__(self, missing: bool = False) -> None:
+        self.missing = missing
+
+    async def get_app_unchecked(self, name: str) -> App:
+        if self.missing:
+            raise AppNotFoundError(name)
+        return App(
+            name=name,
+            preset="fastapi",
+            repo_url="https://github.com/example/blog.git",
+            branch="main",
+            subdir="",
+        )
+
+
+def make_worker(
+    uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+    routes: RouteWriter,
+    *,
+    apps: FakeApps | None = None,
+    worker_id: str = "w1",
+    clock: Callable[[], datetime] | None = None,
+    **kwargs: Any,
+) -> DeployWorker:
+    """A worker on fakes that polls without sleeping (tests drive it with tick/join)."""
+    options: dict[str, Any] = {
+        "worker_id": worker_id,
+        "poll_interval": 0.01,
+        "build_poll_interval": 0,
+        "renew_every": 10.0,
+        **kwargs,
+    }
+    if clock is not None:
+        options["clock"] = clock
+    return DeployWorker(
+        agents,
+        lambda: uow,
+        cast(AppsFacade, apps or FakeApps()),
+        routes,
+        RUNNERS,
+        TRUSTED_PROXY,
+        **options,
+    )
+
+
+async def run_deploys(worker: DeployWorker) -> None:
+    """One claim round, then wait until everything claimed is processed."""
+    await worker.tick()
+    await worker.join()

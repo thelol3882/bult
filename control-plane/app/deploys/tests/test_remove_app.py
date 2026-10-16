@@ -28,7 +28,7 @@ def _service(
 ) -> DeployService:
     # apps is unused by remove_app.
     return DeployService(
-        lambda: uow, cast(AppsFacade, None), agents, routes, settings, set()
+        lambda: uow, cast(AppsFacade, None), agents, routes, settings
     )
 
 

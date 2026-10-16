@@ -41,7 +41,9 @@ def test_history_walks_pages_newest_first(client: TestClient, deploys_uow: InMem
 
     async def seed() -> None:
         for deploy_id in ("d1", "d2", "d3"):
-            await deploys_uow.deploys.add(Deploy(id=deploy_id, app_name="blog"))
+            await deploys_uow.deploys.add(
+                Deploy(id=deploy_id, app_name="blog", status="running")
+            )
 
     asyncio.run(seed())
 

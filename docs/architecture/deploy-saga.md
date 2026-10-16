@@ -13,14 +13,14 @@ Docker on a node cannot roll back together with Postgres, so two-phase commit is
 
 ## Orchestration, not choreography
 
-`run_deploy` in the control plane is the saga **orchestrator**: one coordinator drives every step and decides what to do on failure. The alternative, choreography (each participant reacts to the others' events), hides the control flow across components; at our scale one explicit coordinator is easier to reason about and to test.
+The deploy worker (`app/deploys/services/worker.py`, steps in `runner.py`) in the control plane is the saga **orchestrator**: one coordinator drives every step and decides what to do on failure. The alternative, choreography (each participant reacts to the others' events), hides the control flow across components; at our scale one explicit coordinator is easier to reason about and to test.
 
 ## Steps and compensations
 
 | # | Step (local transaction) | Compensation if a later step fails | Status (2026-10-11) |
 |---|---|---|---|
-| 1 | `StartDeploy` → image pushed to the registry | `CancelDeploy` while still building; a finished image is left (harmless, garbage-collected later) | not implemented |
-| 2 | `RunReplica` → container running on a node | `RemoveReplica` | done — on route failure, on any error after the replica started, and when the app is deleted mid-deploy |
+| 1 | `StartDeploy` → image pushed to the registry | `CancelDeploy` while still building; a finished image is left (harmless, garbage-collected later) | step done; `CancelDeploy` compensation not implemented |
+| 2 | `RunReplica` → container running on a node | `RemoveReplica` | done — on route failure, on any error after the replica started, and when the app is deleted mid-deploy (not when the lease was lost: the replica then belongs to the new owner) |
 | 3 | apply routes → sidecar confirms the generation | the sidecar itself swaps `current` back when `nginx -t` fails | done |
 | 4 | deploy marked `running` | — | done |
 
@@ -32,19 +32,35 @@ Docker on a node cannot roll back together with Postgres, so two-phase commit is
 - **Idempotent compensations.** `RemoveReplica` of a replica that does not exist returns OK ("desired state" semantics), so a compensation can be retried safely too.
 - **Deadlines with "outcome unknown".** `DEADLINE_EXCEEDED` means the step may or may not have happened; idempotency makes "retry with the same id" the safe answer.
 
-## The saga log (planned)
+## The saga log and recovery
 
-Today the saga state lives only in the memory of the `run_deploy` task: if the control plane restarts mid-deploy, the saga is lost while the builder and runner keep going. The plan:
+The `deploys` table is both the **saga log** and the **work queue**: a deploy in `queued`, `building` or `starting` is unfinished work. `POST /apps/{name}/deploys` only inserts a `queued` row and answers 202; no gRPC call happens in the request. A partial unique index (`app_name` where status is active) allows one active deploy per app, so a second POST fails with `409 deploy_in_progress` (the check cannot live in the service: two requests would both pass it across an `await`).
 
-1. **Persist the saga state — done.** The deploy row is the saga log: each step writes its status in its own short transaction (one UoW per write, never across gRPC calls or waits). Still missing: recording the current step and created resources explicitly for recovery.
-2. **Recovery on startup.** For every unfinished deploy: ask the agents what actually exists (`GetDeploy`, `ListReplicas`) and either continue from the last confirmed step or compensate. This is the reconciliation the agent API was designed for (the agent is the source of truth for its own job and containers).
-3. **Compensations.** Done: `RemoveReplica` on route failure and on app deletion. Planned: old replica removal after the redeploy pivot.
+**Claim and lease.** A worker loop in the API process (started in the lifespan) polls about once a second. A claim is one short transaction: take the oldest active deploy whose lease is empty or expired (`FOR UPDATE SKIP LOCKED`), set `lease_owner`, `lease_until = now + 30 s`, `attempts + 1`, commit. Up to 4 deploys are processed concurrently, each in its own task. The row lock is never held across gRPC calls; the lease is what says "this deploy is being worked on".
+
+**Heartbeat.** While a deploy is processed, a heartbeat renews the lease every 10 s. If a renewal reports that the lease is no longer ours, the work task is cancelled.
+
+**Fencing.** Every status write is `UPDATE ... WHERE id = :id AND lease_owner = :me`. Zero rows means the lease was taken (or the app was deleted): the worker stops and writes nothing more. A worker that stalled past its lease therefore cannot overwrite what the new owner did. The route step also re-checks the owner under the routes lock before publishing.
+
+**Crash and shutdown.** A crashed process simply stops renewing; after the lease expires the deploy is claimed again (by this process after a restart, or another one). A graceful shutdown cancels the work and releases the held leases (`lease_until = NULL`, and the attempt is given back), so a restart picks the deploys up at once. After `attempts > 3` the next claim marks the deploy `failed` ("gave up after 3 attempts"): a deploy that keeps killing its worker must not loop forever.
+
+**Resume by status.** Steps are idempotent, so a claimed deploy continues from its status:
+
+| Status | What the worker does |
+|---|---|
+| `queued` | `StartDeploy` (idempotent by `deploy_id`; one retry on `DEADLINE_EXCEEDED`) → `building` |
+| `building` | poll `GetDeploy`: still running → keep polling; `SUCCEEDED` → `starting` with commit and image; `FAILED` → `failed` with the build error; `NOT_FOUND` → `failed` "build lost" |
+| `starting` | `ListReplicas` on the runners looks for `{deploy_id}-r0`: found and running → reuse it; otherwise `RunReplica` (idempotent by `replica_id`); then publish the route → `running` |
+
+**Startup check.** Once at startup (alongside the worker), every `running` deploy whose replica `{id}-r0` is on no reachable runner becomes `failed` ("replica is gone"), then the routes are re-applied from the database. A runner that does not answer is logged and its deploys are left alone: silence is not proof that the replica is gone. Bringing such a deploy back up is a separate feature.
+
+Compensations: `RemoveReplica` on route failure, on any error after the replica started, and when the app is deleted mid-deploy. Planned: old replica removal after the redeploy pivot.
 
 ## Deleting an app
 
 Deleting an app is also a saga across the same resources: the app's data, its routes, its replicas on the nodes. The order matters: a step that cannot be undone, or that would leave users facing a broken address, must come as late as possible. The intended order is not decided yet.
 
-The place where the compensations run is the `AppDeleted` handler (`app/deploys/handlers.py: on_app_deleted`): `AppService.delete` removes the app and publishes the event; the handler, delivered synchronously after commit and before the 204, forgets the app's deploys, re-applies the routes without it, then removes the app's replicas (route update and `RemoveReplica` are best effort and logged). The replicas are found by asking every runner node (`ListReplicas`, filtered by `app_id`), not from deploy rows: the `ON DELETE CASCADE` foreign key has already removed the rows at commit. This also removes superseded replicas left by earlier redeploys; a node that cannot be reached is logged and skipped. A deploy still in flight notices on its own that its row is gone and removes its replica itself (see `runner.py`).
+The place where the compensations run is the `AppDeleted` handler (`app/deploys/handlers.py: on_app_deleted`): `AppService.delete` removes the app and publishes the event; the handler, delivered synchronously after commit and before the 204, forgets the app's deploys, re-applies the routes without it, then removes the app's replicas (route update and `RemoveReplica` are best effort and logged). The replicas are found by asking every runner node (`ListReplicas`, filtered by `app_id`), not from deploy rows: the `ON DELETE CASCADE` foreign key has already removed the rows at commit. This also removes superseded replicas left by earlier redeploys; a node that cannot be reached is logged and skipped. A deploy still in flight notices on its own that its row is gone (its fenced write matches nothing and the row is missing) and removes its replica itself (see `runner.py`).
 
 ## Why not a distributed transaction
 

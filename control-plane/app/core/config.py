@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     database_url: str = Field(validation_alias="DATABASE_URL")
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_ttl_seconds: int = 86400
+    deploy_worker: bool = True  # BULT_DEPLOY_WORKER=false: no background worker (API-only tests)
 
     @field_validator("runners", mode="before")
     @classmethod

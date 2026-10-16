@@ -21,3 +21,7 @@ class AppsFacade:
     async def get_app(self, name: str, principal: Principal) -> App:
         """The app if the principal owns it (AppNotFoundError / AppForbiddenError otherwise)."""
         return await self._service.get(name, principal)
+
+    async def get_app_unchecked(self, name: str) -> App:
+        """System read for background work: no principal, AppNotFoundError if gone."""
+        return await self._service.get_unchecked(name)

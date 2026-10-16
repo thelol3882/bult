@@ -1,14 +1,15 @@
 """Deploys API tests: a fake AgentClients instead of the network."""
 
+import asyncio
 from contextlib import ExitStack
 
-import grpc
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.core.deps import get_agents
-from tests.fakes import FakeAgentClients, auth_headers, rpc_error
+from app.deploys.uow import InMemoryDeploysUoW
+from tests.fakes import FakeAgentClients, auth_headers
 
 APP_BODY = {
     "name": "blog",
@@ -21,7 +22,7 @@ APP_BODY = {
 def client_for(app: FastAPI):
     """client_for(fake) -> client with the fake injected and app "blog" created.
 
-    Uses `with TestClient`: one event loop for the whole test, so run_deploy tasks survive requests.
+    Uses `with TestClient`: one event loop for the whole test, one portal for every request.
     """
     stack = ExitStack()
 
@@ -46,7 +47,7 @@ def test_start_deploy_accepted(client_for):
     body = response.json()
     assert body["id"]
     assert body["app_name"] == "blog"
-    assert body["status"] == "building"
+    assert body["status"] == "queued"
 
     got = client.get(f"/apps/blog/deploys/{body['id']}")
     assert got.status_code == 200
@@ -75,41 +76,34 @@ def test_start_deploy_unknown_app(client_for):
     assert agents.start_calls == []
 
 
-def test_start_deploy_builder_unavailable(client_for):
-    agents = FakeAgentClients(start_error=rpc_error(grpc.StatusCode.UNAVAILABLE))
+def test_second_deploy_while_one_is_active_is_409(client_for):
+    agents = FakeAgentClients()
     client = client_for(agents)
 
-    response = client.post("/apps/blog/deploys")
+    first = client.post("/apps/blog/deploys")
+    second = client.post("/apps/blog/deploys")
 
-    assert response.status_code == 503
-    assert response.json()["code"] == "builder_unavailable"
+    assert first.status_code == 202
+    assert second.status_code == 409
+    assert second.json()["code"] == "deploy_in_progress"
+    history = client.get("/apps/blog/deploys").json()["results"]
+    assert [d["id"] for d in history] == [first.json()["id"]]
 
 
-def test_start_deploy_invalid_argument_is_our_bug(client_for):
-    secret = "invalid repo_url: /var/lib/bult/work/x"
-    agents = FakeAgentClients(
-        start_error=rpc_error(grpc.StatusCode.INVALID_ARGUMENT, secret)
-    )
+def test_start_deploy_makes_no_agent_call(client_for):
+    agents = FakeAgentClients()
     client = client_for(agents)
 
-    response = client.post("/apps/blog/deploys")
+    assert client.post("/apps/blog/deploys").status_code == 202
 
-    assert response.status_code == 500
-    assert response.json()["code"] == "internal_error"
-    assert secret not in response.text
-    assert "/var/lib" not in response.text
+    assert agents.start_calls == []  # the worker calls the builder, not the request
 
 
-def test_start_deploy_deadline_retries_same_id(client_for):
-    agents = FakeAgentClients(
-        start_error=rpc_error(grpc.StatusCode.DEADLINE_EXCEEDED),
-        start_error_times=1,
-    )
-    client = client_for(agents)
+def test_new_deploy_is_allowed_once_the_previous_one_finished(
+    client_for, deploys_uow: InMemoryDeploysUoW
+):
+    client = client_for(FakeAgentClients())
+    first = client.post("/apps/blog/deploys").json()["id"]
+    asyncio.run(deploys_uow.deploys.update(first, status="running"))
 
-    response = client.post("/apps/blog/deploys")
-
-    assert response.status_code == 202, response.text
-    assert len(agents.start_calls) == 2
-    first, second = (call["deploy_id"] for call in agents.start_calls)
-    assert first == second == response.json()["id"]
+    assert client.post("/apps/blog/deploys").status_code == 202

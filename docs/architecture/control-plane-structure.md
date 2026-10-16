@@ -25,7 +25,7 @@ app/
     events.py     events this domain publishes (frozen dataclasses)
     tests/
     deps.py       Depends wiring for this domain
-  deploys/        same shape; services/runner.py is the deploy saga orchestrator;
+  deploys/        same shape; services/worker.py claims deploys under a lease and services/runner.py holds the resumable saga steps;
                   handlers.py = subscribers of other domains' events: thin entry points like routers, call services only (wired in main.py only)
   auth/           users, argon2 passwords, JWT access tokens; same layer folders; deps.py exports `CurrentUser`
   agents/         infrastructure: gRPC clients to node agents
@@ -44,6 +44,7 @@ app/
    - Each mutating service method opens `async with uow_factory() as uow` and calls `await uow.commit()` explicitly; leaving the block without commit rolls back. Requests and the deploy saga work the same way; the saga uses one short UoW per write step.
    - One transaction changes one domain; other domains catch up through events (`AppDeleted`), with `ON DELETE CASCADE` as a safety net for data.
    - No transaction stays open across slow awaits (gRPC to agents, build waits, route application).
+   - Background work: the deploy worker (started in the lifespan, `app.state.deploy_worker`) is an entry point like a router. It claims a deploy in a short UoW, and every later write is a short UoW fenced by the lease (`update_owned`); the `deploys` table is the queue (see `deploy-saga.md`). Services of other domains are reached through the facade (`AppsFacade.get_app_unchecked` is the system read without a principal). `BULT_DEPLOY_WORKER=false` disables the worker and the startup check (API-only tests).
    - Ordering: services commit inside the endpoint; the event collector drains after the endpoint (`scope="function"`), so commit → events → response holds without extra wiring.
 6. **Typed inputs:** services take Pydantic input models or explicit arguments, never raw `dict`s. Repositories return domain objects, not query builders.
 7. **Settings:** `pydantic-settings`, prefix `BULT_`; secrets as `SecretStr`. Derived values that depend on settings (e.g. an app's public URL) are computed by services, not by schemas.

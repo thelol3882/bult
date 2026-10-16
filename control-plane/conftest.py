@@ -90,6 +90,7 @@ def app(
     monkeypatch.setenv("BULT_INGRESS_DIR", str(tmp_path / "lifespan-routes"))
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("BULT_JWT_SECRET", TEST_JWT_SECRET)
+    monkeypatch.setenv("BULT_DEPLOY_WORKER", "false")
 
     def apps_uow_factory() -> InMemoryAppsUoW:
         return apps_uow
@@ -108,7 +109,6 @@ def app(
     )
     application.state.apps_uow_factory = apps_uow_factory
     application.state.deploys_uow_factory = deploys_uow_factory
-    application.state.deploy_tasks = set()
     application.state.agents = agents
     application.state.routes = routes
     application.state.settings = settings

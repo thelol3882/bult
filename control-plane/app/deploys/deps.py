@@ -1,6 +1,5 @@
 """Depends wiring of the deploys domain."""
 
-import asyncio
 from collections.abc import Callable
 from typing import Annotated
 
@@ -20,13 +19,7 @@ def get_deploys_uow_factory(request: Request) -> Callable[[], DeploysUoW]:
     return request.app.state.deploys_uow_factory
 
 
-def get_deploy_tasks(request: Request) -> set[asyncio.Task[None]]:
-    """Running run_deploy tasks."""
-    return request.app.state.deploy_tasks
-
-
 DeployUoWDep = Annotated[Callable[[], DeploysUoW], Depends(get_deploys_uow_factory)]
-DeployTasksDep = Annotated[set[asyncio.Task[None]], Depends(get_deploy_tasks)]
 
 
 def build_deploy_service(
@@ -35,10 +28,9 @@ def build_deploy_service(
     agents: Agents,
     routes: RouteWriter,
     settings: Settings,
-    tasks: set[asyncio.Task[None]],
 ) -> DeployService:
     """The single place DeployService is constructed (request and event paths)."""
-    return DeployService(uow_factory, apps, agents, routes, settings, tasks)
+    return DeployService(uow_factory, apps, agents, routes, settings)
 
 
 def get_deploy_service(
@@ -47,9 +39,8 @@ def get_deploy_service(
     agents: AgentsDep,
     routes: RoutesDep,
     settings: SettingsDep,
-    tasks: DeployTasksDep,
 ) -> DeployService:
-    return build_deploy_service(uow_factory, apps, agents, routes, settings, tasks)
+    return build_deploy_service(uow_factory, apps, agents, routes, settings)
 
 
 DeployServiceDep = Annotated[DeployService, Depends(get_deploy_service)]

@@ -44,6 +44,14 @@ class AppService:
         async with self._uow_factory() as uow:
             return await self._owned(uow, name, principal)
 
+    async def get_unchecked(self, name: str) -> App:
+        """System read without an ownership check (background work on an already authorized request)."""
+        async with self._uow_factory() as uow:
+            app = await uow.apps.get(name)
+            if app is None:
+                raise AppNotFoundError(name)
+            return app
+
     async def update(self, name: str, data: AppUpdate, principal: Principal) -> App:
         changes = data.model_dump(exclude_unset=True)
         if not changes:
