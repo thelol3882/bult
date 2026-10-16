@@ -21,6 +21,7 @@ import {
     useStartDeploy,
 } from '@/features/deploys';
 import { normalizeError } from '@/shared/api';
+import { isDeployActive } from '@/shared/types';
 import { EmptyState, Mono, PageHeader } from '@/shared/components';
 import classes from './AppDetailWidget.module.css';
 
@@ -35,6 +36,8 @@ export function AppDetailWidget({ name }: { name: string }) {
     const polling = useDeployPolling(name, selectedId);
     // The polled deploy is fresher than the cached history row.
     const deploys = history.deploys.map((d) => (d.id === polling.deploy?.id ? polling.deploy : d));
+    // The newest deploy decides: the API accepts one active deploy per app.
+    const deployInProgress = deploys[0] !== undefined && isDeployActive(deploys[0].status);
     const [editOpened, editHandlers] = useDisclosure(false);
     const confirmDelete = useDeleteApp(() => router.push('/apps'));
 
@@ -109,6 +112,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                         <Button
                             leftSection={<IconCloudUpload size={16} />}
                             loading={isStarting}
+                            disabled={deployInProgress}
                             onClick={handleDeploy}
                         >
                             Deploy

@@ -1,7 +1,10 @@
-export type DeployStatus = 'building' | 'starting' | 'running' | 'failed';
+export type DeployStatus = 'queued' | 'building' | 'starting' | 'running' | 'failed';
 
-export const isDeployFinished = (status: DeployStatus): boolean =>
-    status === 'running' || status === 'failed';
+/** A queued, building or starting deploy: work in progress, keep polling it. */
+export const isDeployActive = (status: DeployStatus): boolean =>
+    status === 'queued' || status === 'building' || status === 'starting';
+
+export const isDeployFinished = (status: DeployStatus): boolean => !isDeployActive(status);
 
 /** Page-number pagination envelope (`next`/`previous` are page numbers). */
 export interface Page<T> {

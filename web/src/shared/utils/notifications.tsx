@@ -20,6 +20,10 @@ export function showError(message: string, title = 'Something went wrong', trace
     });
 }
 
+export function showWarning(message: string, title: string) {
+    notifications.show({ title, message, color: 'yellow', autoClose: 6000 });
+}
+
 export function showSuccess(message: string, title = 'Done') {
     notifications.show({ title, message, color: 'green' });
 }

@@ -1,10 +1,10 @@
 'use client';
 
 import { normalizeError } from '@/shared/api';
-import { showError } from '@/shared/utils/notifications';
+import { showError, showWarning } from '@/shared/utils/notifications';
 import { useStartDeployMutation } from '../api/deploysApi';
 
-/** Starts a deploy and resolves with its id; errors are shown as a notification. */
+/** Queues a deploy and resolves with its id; errors are shown as a notification. */
 export function useStartDeploy() {
     const [start, state] = useStartDeployMutation();
 
@@ -13,6 +13,13 @@ export function useStartDeploy() {
             return (await start(name).unwrap()).id;
         } catch (e) {
             const error = normalizeError(e);
+            if (error.code === 'deploy_in_progress') {
+                showWarning(
+                    'This app already has a deploy in progress. Wait for it to finish.',
+                    'Deploy in progress',
+                );
+                return null;
+            }
             showError(error.message, 'Deploy failed to start', error.traceId);
             return null;
         }

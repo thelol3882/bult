@@ -76,6 +76,9 @@
     --color-info-bg: var(--sky-0);
 
     /* Deploy status (badge text / bg / dot) */
+    --status-queued-fg: var(--slate-6);
+    --status-queued-bg: var(--slate-1);
+    --status-queued-dot: var(--slate-4);
     --status-building-fg: var(--sun-8);
     --status-building-bg: var(--sun-0);
     --status-building-dot: var(--sun-5);
