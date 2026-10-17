@@ -38,7 +38,7 @@ DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024
 
 _FINAL_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
 # A deploy written in one of these statuses is done with its worker: the lease goes with it.
-_LEASE_ENDS_WITH = {"running", "failed", "superseded"}
+_LEASE_ENDS_WITH = {"running", "failed", "cancelled", "superseded"}
 _RETRYABLE_POLL = {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED}
 MAX_POLL_FAILURES = 5
 
@@ -165,7 +165,7 @@ async def _start_build(ctx: RunnerContext, deploy: Deploy) -> Deploy | None:
 
 
 async def _await_build(ctx: RunnerContext, deploy: Deploy) -> Deploy | None:
-    """building -> starting (or failed): poll GetDeploy until a final state."""
+    """building -> starting (or failed / cancelled): poll GetDeploy until a final state."""
     try:
         result = await _wait_for_build(ctx, deploy.id)
     except grpc.aio.AioRpcError as e:
@@ -173,6 +173,10 @@ async def _await_build(ctx: RunnerContext, deploy: Deploy) -> Deploy | None:
             raise
         logger.warning("deploy %s: builder does not know the build", deploy.id)
         await _write(ctx, deploy.id, status="failed", error="build lost")
+        return None
+
+    if result.state == "CANCELLED":
+        await _write(ctx, deploy.id, status="cancelled")
         return None
 
     if result.state != "SUCCEEDED":

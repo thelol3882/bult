@@ -50,6 +50,17 @@ async def get_deploy(
 
 
 @router.post(
+    "/{deploy_id}/cancel",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DeployOut,
+)
+async def cancel(
+    name: str, deploy_id: str, service: DeployServiceDep, user: CurrentUser
+) -> DeployOut:
+    return DeployOut.model_validate(await service.cancel(name, deploy_id, user))
+
+
+@router.post(
     "/{deploy_id}/rollback",
     status_code=status.HTTP_202_ACCEPTED,
     response_model=DeployOut,

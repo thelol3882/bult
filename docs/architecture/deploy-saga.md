@@ -19,7 +19,7 @@ The deploy worker (`app/deploys/services/worker.py`, steps in `runner.py`) in th
 
 | # | Step (local transaction) | Compensation if a later step fails | Status |
 |---|---|---|---|
-| 1 | `StartDeploy` → image pushed to the registry | `CancelDeploy` while still building; a finished image is left (harmless, garbage-collected later) | step done; `CancelDeploy` compensation not implemented |
+| 1 | `StartDeploy` → image pushed to the registry | `CancelDeploy` while still building; a finished image is left (harmless, garbage-collected later) | done: user cancel (below); `CancelDeploy` is not yet a compensation for a failed later step |
 | 2 | `RunReplica` → container running on a node | `RemoveReplica` | done — on route failure, on any error after the replica started, and when the app is deleted mid-deploy (not when the lease was lost: the replica then belongs to the new owner) |
 | 3 | apply routes → sidecar confirms the generation | the sidecar itself swaps `current` back when `nginx -t` fails | done |
 | 4 | deploy marked `running` | — | done |
@@ -74,6 +74,19 @@ A deploy is normally `queued → building → starting → running`. A deploy cr
 | `POST /apps/{name}/start` | the newest deploy that reached `running` | 409 if there is none, or if the app is already running |
 
 A deploy "reached running" when it has an image and a `node` (the node is written together with `running`). A registry that has garbage-collected the image makes `RunReplica` fail, and the deploy ends `failed`.
+
+## Cancel
+
+`POST /apps/{name}/deploys/{id}/cancel` (owner only, 202). `cancelled` is a final status and is not active, so the app is free for the next deploy.
+
+| Deploy status | What happens |
+|---|---|
+| `queued` | One conditional write: `status = 'cancelled' WHERE status = 'queued'` and no live lease, lease cleared. No agent call. If the row no longer matches, the worker took it between the read and the write: the request falls through to the `building` path. |
+| `building` | `CancelDeploy` on the builder, answer 202. The worker, still polling, sees `CANCELLED` from `GetDeploy` and writes the final `cancelled` (lease cleared like any final status), never `failed`. |
+| `starting` | 409 `deploy_not_cancellable`: the image is built and the replica is almost up; undoing it is the stop path, not a cancel. |
+| `running`, `failed`, `cancelled`, `superseded`, `stopped` | 409 `deploy_not_cancellable`. |
+
+Two details. A `queued` row with a live lease was claimed but has not written `building` yet; cancelling it in place would let the worker overwrite `cancelled` with `building`, so it is treated as taken, and when the builder does not know it yet (`NOT_FOUND`) the answer is a 409 "try again in a moment". If the builder reports the build already `SUCCEEDED`/`FAILED`, the answer is 409 too. A builder that does not answer is 503 `builder_unavailable`.
 
 ## Stop
 

@@ -4,7 +4,7 @@ import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 
 import grpc
 
@@ -67,6 +67,12 @@ class DeployNotRestorableError(ConflictError):
         )
 
 
+class DeployNotCancellableError(ConflictError):
+    """The deploy is past the point where a cancel can stop it."""
+
+    code = ErrorCode.DEPLOY_NOT_CANCELLABLE
+
+
 class NodeUnavailableError(ServiceUnavailableError):
     """The node with the replica did not answer."""
 
@@ -74,6 +80,19 @@ class NodeUnavailableError(ServiceUnavailableError):
 
     def __init__(self) -> None:
         super().__init__("The node running the app is not reachable. Try again later.")
+
+
+class BuilderUnavailableError(ServiceUnavailableError):
+    """The builder did not answer."""
+
+    code = ErrorCode.BUILDER_UNAVAILABLE
+
+    def __init__(self) -> None:
+        super().__init__("The build node is not reachable. Try again later.")
+
+
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
 
 
 @dataclass(frozen=True)
@@ -148,6 +167,53 @@ class DeployService:
         if not source.restorable:
             raise DeployNotRestorableError(deploy_id)
         return await self._queue_from_image(app, source, principal)
+
+    async def cancel(
+        self, app_name: str, deploy_id: str, principal: Principal
+    ) -> Deploy:
+        """Cancel a queued or building deploy.
+
+        queued: written directly, no agent call. building: the builder is asked to stop and
+        the worker writes the final `cancelled` when it sees the CANCELLED build.
+        """
+        deploy = await self.get(app_name, deploy_id, principal)
+        if deploy.status == "queued":
+            async with self._uow_factory() as uow:
+                cancelled = await uow.deploys.cancel_queued(deploy_id, _utcnow())
+                await uow.commit()
+            if cancelled is not None:
+                return cancelled
+            # The worker took it between the read and the write: look again.
+            deploy = await self.get(app_name, deploy_id, principal)
+
+        if deploy.status == "starting":
+            raise DeployNotCancellableError(
+                "The deploy is already starting the app and can no longer be cancelled."
+            )
+        if deploy.status not in ("queued", "building"):
+            raise DeployNotCancellableError(
+                f"The deploy has already finished ({deploy.status})."
+            )
+
+        try:
+            result = await self._agents.cancel_deploy(deploy_id)
+        except grpc.aio.AioRpcError as e:
+            code = e.code()
+            logger.warning("cancel %s: %s %s", deploy_id, code.name, e.details())
+            if code == grpc.StatusCode.NOT_FOUND and deploy.status == "queued":
+                # Claimed, but the builder has not heard of it yet.
+                raise DeployNotCancellableError(
+                    "The deploy is just being picked up. Try again in a moment."
+                ) from None
+            if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                raise BuilderUnavailableError() from None
+            if code == grpc.StatusCode.NOT_FOUND:
+                return deploy  # the builder lost the build: the worker fails the deploy
+            raise InternalError("Could not cancel the deploy.") from None
+
+        if result.state in ("SUCCEEDED", "FAILED"):
+            raise DeployNotCancellableError("The build has already finished.")
+        return deploy
 
     async def logs(self, app_name: str, tail: int, principal: Principal) -> AppLogs:
         """Last `tail` lines of the replica of the running deploy."""

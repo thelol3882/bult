@@ -8,6 +8,7 @@ from bult.agent.v1 import agent_pb2, agent_pb2_grpc
 
 START_DEPLOY_TIMEOUT = 10
 GET_DEPLOY_TIMEOUT = 10
+CANCEL_DEPLOY_TIMEOUT = 10
 RUN_REPLICA_TIMEOUT = 300  # includes pulling the image on the node
 REMOVE_REPLICA_TIMEOUT = 30
 LIST_REPLICAS_TIMEOUT = 10
@@ -110,6 +111,14 @@ class AgentClients:
         """GetDeploy on the builder."""
         request = agent_pb2.GetDeployRequest(deploy_id=deploy_id)
         response = await self._builder.GetDeploy(request, timeout=GET_DEPLOY_TIMEOUT)
+        return _deploy_result(response.deploy)
+
+    async def cancel_deploy(self, deploy_id: str) -> DeployResult:
+        """CancelDeploy on the builder; a finished build is returned as it is."""
+        request = agent_pb2.CancelDeployRequest(deploy_id=deploy_id)
+        response = await self._builder.CancelDeploy(
+            request, timeout=CANCEL_DEPLOY_TIMEOUT
+        )
         return _deploy_result(response.deploy)
 
     async def run_replica(
@@ -242,6 +251,8 @@ class Agents(Protocol):
     ) -> DeployResult: ...
 
     async def get_deploy(self, deploy_id: str) -> DeployResult: ...
+
+    async def cancel_deploy(self, deploy_id: str) -> DeployResult: ...
 
     async def run_replica(
         self,

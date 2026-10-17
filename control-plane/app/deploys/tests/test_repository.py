@@ -110,3 +110,17 @@ def test_update_cannot_touch_lease_fields_but_the_owner_can_release():
     cleared = asyncio.run(repo.update_owned("d1", "w1", lease_owner="", status="running"))
     assert cleared is not None and cleared.lease_owner == ""
     assert asyncio.run(repo.update_owned("d1", "w1", status="failed")) is None
+
+
+def test_cancel_queued_only_while_queued_and_unleased():
+    repo = _repo(Deploy(id="d1", app_name="blog"))
+    asyncio.run(repo.claim("w1", LEASE, NOW))
+
+    assert asyncio.run(repo.cancel_queued("d1", NOW)) is None  # lease is alive
+
+    cancelled = asyncio.run(repo.cancel_queued("d1", NOW + LEASE + timedelta(seconds=1)))
+    assert cancelled is not None
+    assert (cancelled.status, cancelled.lease_owner, cancelled.lease_until) == ("cancelled", "", None)
+    assert asyncio.run(repo.cancel_queued("d1", NOW)) is None  # no longer queued
+    asyncio.run(repo.add(Deploy(id="d2", app_name="blog")))  # cancelled is not active
+    assert asyncio.run(repo.claim("w2", LEASE, NOW)).id == "d2"  # pyright: ignore[reportOptionalMemberAccess]

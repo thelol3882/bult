@@ -1,6 +1,7 @@
 """Deploy storage behind a Protocol.
 
-Lifecycle: queued → building → starting → running; any active status → failed.
+Lifecycle: queued → building → starting → running; any active status → failed;
+queued or building → cancelled (the user's cancel).
 A deploy created from an earlier image starts at `starting`. A running deploy ends as
 `superseded` (a newer one took over) or `stopped` (the app was stopped).
 Active deploys are the work queue: a worker claims one under a lease.
@@ -13,7 +14,14 @@ from typing import Literal, Protocol
 from app.deploys.errors import DeployInProgressError
 
 DeployStatus = Literal[
-    "queued", "building", "starting", "running", "failed", "superseded", "stopped"
+    "queued",
+    "building",
+    "starting",
+    "running",
+    "failed",
+    "cancelled",
+    "superseded",
+    "stopped",
 ]
 ACTIVE_STATUSES: tuple[DeployStatus, ...] = ("queued", "building", "starting")
 
@@ -77,6 +85,12 @@ class DeployRepository(Protocol):
     ) -> Deploy | None:
         """`update` (plus lease_until, attempts), but only while `owner` holds the lease
         (fencing); None if the deploy is gone or the lease is held by someone else."""
+        ...
+
+    async def cancel_queued(self, deploy_id: str, now: datetime) -> Deploy | None:
+        """queued → cancelled, only if the deploy is still queued and no worker holds a live
+        lease on it (one claimed but not yet building counts as taken). None if it no longer
+        matches. The lease is cleared."""
         ...
 
     async def list_all(self) -> list[Deploy]: ...
@@ -164,6 +178,19 @@ class InMemoryDeployRepository:
         self, deploy_id: str, owner: str, **changes
     ) -> Deploy | None:
         return self._update(deploy_id, changes, OWNED_FIELDS, owner=owner)
+
+    async def cancel_queued(self, deploy_id: str, now: datetime) -> Deploy | None:
+        deploy = self._deploys.get(deploy_id)
+        if (
+            deploy is None
+            or deploy.status != "queued"
+            or (deploy.lease_until is not None and deploy.lease_until >= now)
+        ):
+            return None
+        self._deploys[deploy_id] = deploy = replace(
+            deploy, status="cancelled", lease_owner="", lease_until=None
+        )
+        return replace(deploy)
 
     async def list_all(self) -> list[Deploy]:
         return [replace(d) for d in self._deploys.values()]

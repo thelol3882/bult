@@ -129,6 +129,26 @@ class SqlDeployRepository:
     ) -> Deploy | None:
         return await self._update(deploy_id, changes, OWNED_FIELDS, owner=owner)
 
+    async def cancel_queued(self, deploy_id: str, now: datetime) -> Deploy | None:
+        result = await self._session.execute(
+            update(DeployModel)
+            .where(
+                DeployModel.id == deploy_id,
+                DeployModel.status == "queued",
+                or_(DeployModel.lease_until.is_(None), DeployModel.lease_until < now),
+            )
+            .values(status="cancelled", lease_owner="", lease_until=None)
+        )
+        assert isinstance(result, CursorResult)
+        if result.rowcount == 0:
+            return None
+        row = await self._session.scalar(
+            select(DeployModel)
+            .where(DeployModel.id == deploy_id)
+            .execution_options(populate_existing=True)
+        )
+        return None if row is None else _to_domain(row)
+
     async def list_all(self) -> list[Deploy]:
         rows = await self._session.scalars(
             select(DeployModel).order_by(DeployModel.created_at)

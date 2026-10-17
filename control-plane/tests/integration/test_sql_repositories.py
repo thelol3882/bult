@@ -523,3 +523,30 @@ async def test_deploy_from_image_stores_its_source_and_a_final_write_clears_the_
         assert done is not None
         assert (done.lease_owner, done.lease_until) == ("", None)
         assert await uow.deploys.update_owned("d2", "w1", status="failed") is None
+
+
+@db_test
+async def test_cancel_queued_respects_status_and_live_lease(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(factory, Deploy(id="d1", app_name="hello"))
+    now = datetime.now(UTC)
+    async with SqlDeploysUoW(factory) as uow:
+        await uow.deploys.claim("w1", LEASE, now)
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.deploys.cancel_queued("d1", now) is None  # lease is alive
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        cancelled = await uow.deploys.cancel_queued("d1", now + LEASE + timedelta(seconds=1))
+        await uow.commit()
+    assert cancelled is not None
+    assert (cancelled.status, cancelled.lease_owner, cancelled.lease_until) == ("cancelled", "", None)
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.deploys.cancel_queued("d1", now) is None  # no longer queued
+        assert await uow.deploys.claim("w2", LEASE, now) is None  # and not work any more

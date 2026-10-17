@@ -92,6 +92,9 @@ class FakeAgentClients:
 
         self.start_calls: list[dict[str, Any]] = []
         self.get_calls = 0
+        self.cancel_calls: list[str] = []
+        self.cancel_error: AioRpcError | None = None
+        self.cancelled_builds: set[str] = set()  # get_deploy reports these as CANCELLED
         self.run_calls: list[dict[str, Any]] = []
         self.remove_calls: list[dict[str, Any]] = []
         self.list_error: AioRpcError | None = None
@@ -123,7 +126,16 @@ class FakeAgentClients:
             raise self.start_error
         return DeployResult(deploy_id=deploy_id, state="RUNNING")
 
+    async def cancel_deploy(self, deploy_id: str) -> DeployResult:
+        self.cancel_calls.append(deploy_id)
+        if self.cancel_error is not None:
+            raise self.cancel_error
+        self.cancelled_builds.add(deploy_id)
+        return DeployResult(deploy_id=deploy_id, state="CANCELLED")
+
     async def get_deploy(self, deploy_id: str) -> DeployResult:
+        if deploy_id in self.cancelled_builds:
+            return DeployResult(deploy_id=deploy_id, state="CANCELLED")
         item = self.build_states[min(self.get_calls, len(self.build_states) - 1)]
         self.get_calls += 1
         if isinstance(item, AioRpcError):

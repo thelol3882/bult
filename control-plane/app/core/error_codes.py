@@ -25,6 +25,7 @@ class ErrorCode(StrEnum):
     DEPLOY_NOT_RESTORABLE = "deploy_not_restorable"
     APP_ALREADY_RUNNING = "app_already_running"
     NODE_UNAVAILABLE = "node_unavailable"
+    DEPLOY_NOT_CANCELLABLE = "deploy_not_cancellable"
 
     # pagination
     INVALID_CURSOR = "invalid_cursor"
