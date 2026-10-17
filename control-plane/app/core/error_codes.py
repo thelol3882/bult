@@ -21,6 +21,10 @@ class ErrorCode(StrEnum):
     DEPLOY_NOT_FOUND = "deploy_not_found"
     BUILDER_UNAVAILABLE = "builder_unavailable"
     DEPLOY_IN_PROGRESS = "deploy_in_progress"
+    NOTHING_TO_START = "nothing_to_start"
+    DEPLOY_NOT_RESTORABLE = "deploy_not_restorable"
+    APP_ALREADY_RUNNING = "app_already_running"
+    NODE_UNAVAILABLE = "node_unavailable"
 
     # pagination
     INVALID_CURSOR = "invalid_cursor"

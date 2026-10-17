@@ -21,3 +21,12 @@ class DeployOut(BaseModel):
     host_port: int
     error: str
     created_at: datetime
+    source_deploy_id: str
+    restorable: bool  # a rollback or start can reuse its image
+
+
+class LogsOut(BaseModel):
+    """The tail of the output of the app's running replica."""
+
+    deploy_id: str | None  # None when no deploy is running
+    lines: list[str]

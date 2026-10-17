@@ -433,3 +433,93 @@ async def test_renew_and_update_owned_ignore_a_wrong_owner(
     assert released is not None
     assert released.lease_until is None
     assert released.attempts == 0
+
+
+@db_test
+async def test_app_env_and_replicas_roundtrip_and_list_stopped(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "alpha", owner)
+    await make_app_named(factory, "beta", owner)
+
+    async with SqlAppsUoW(factory) as uow:
+        fresh = await uow.apps.get("alpha")
+        assert fresh is not None
+        assert fresh.replicas == 1
+        assert fresh.env == {}
+
+        assert await uow.apps.list_stopped() == []
+        await uow.apps.update("beta", replicas=0, env={"API_KEY": "s3cret"})
+        await uow.commit()
+
+    async with SqlAppsUoW(factory) as uow:
+        beta = await uow.apps.get("beta")
+        assert beta is not None
+        assert (beta.replicas, beta.env) == (0, {"API_KEY": "s3cret"})
+        assert await uow.apps.list_stopped() == ["beta"]
+        assert "s3cret" not in repr(beta)
+
+
+@db_test
+async def test_running_and_restorable_queries(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await make_app_named(factory, "other", owner)
+    image = "registry/hello@sha256:" + "a" * 64
+    ran = {"image": image, "node": "node-a", "host_port": 1}
+
+    # Oldest to newest: a replaced deploy, one that never ran, the running one, another app's.
+    await add_deploy(factory, Deploy(id="d1", app_name="hello", status="superseded", **ran))
+    await add_deploy(
+        factory, Deploy(id="d2", app_name="hello", status="failed", image=image)
+    )
+    await add_deploy(factory, Deploy(id="d3", app_name="hello", status="running", **ran))
+    await add_deploy(factory, Deploy(id="d4", app_name="other", status="running", **ran))
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert [d.id for d in await uow.deploys.list_running("hello")] == ["d3"]
+        newest = await uow.deploys.latest_restorable("hello")
+        assert newest is not None and newest.id == "d3"
+        assert await uow.deploys.update("d3", status="stopped") is not None
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.deploys.list_running("hello") == []
+        stopped = await uow.deploys.latest_restorable("hello")
+        assert stopped is not None and stopped.id == "d3"  # d2 never ran
+        assert await uow.deploys.latest_restorable("nobody") is None
+
+
+@db_test
+async def test_deploy_from_image_stores_its_source_and_a_final_write_clears_the_lease(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(
+        factory,
+        Deploy(
+            id="d2",
+            app_name="hello",
+            status="starting",
+            image="registry/hello@sha256:" + "a" * 64,
+            source_deploy_id="d1",
+        ),
+    )
+    now = datetime.now(UTC)
+    async with SqlDeploysUoW(factory) as uow:
+        claimed = await uow.deploys.claim("w1", LEASE, now)
+        await uow.commit()
+    assert claimed is not None
+    assert (claimed.status, claimed.source_deploy_id) == ("starting", "d1")
+    assert claimed.lease_owner == "w1"
+
+    async with SqlDeploysUoW(factory) as uow:
+        done = await uow.deploys.update_owned(
+            "d2", "w1", status="running", lease_owner="", lease_until=None
+        )
+        await uow.commit()
+        assert done is not None
+        assert (done.lease_owner, done.lease_until) == ("", None)
+        assert await uow.deploys.update_owned("d2", "w1", status="failed") is None

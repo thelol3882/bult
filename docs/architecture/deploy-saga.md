@@ -17,14 +17,15 @@ The deploy worker (`app/deploys/services/worker.py`, steps in `runner.py`) in th
 
 ## Steps and compensations
 
-| # | Step (local transaction) | Compensation if a later step fails | Status (2026-10-11) |
+| # | Step (local transaction) | Compensation if a later step fails | Status |
 |---|---|---|---|
 | 1 | `StartDeploy` → image pushed to the registry | `CancelDeploy` while still building; a finished image is left (harmless, garbage-collected later) | step done; `CancelDeploy` compensation not implemented |
 | 2 | `RunReplica` → container running on a node | `RemoveReplica` | done — on route failure, on any error after the replica started, and when the app is deleted mid-deploy (not when the lease was lost: the replica then belongs to the new owner) |
 | 3 | apply routes → sidecar confirms the generation | the sidecar itself swaps `current` back when `nginx -t` fails | done |
 | 4 | deploy marked `running` | — | done |
+| 5 | older `running` deploys of the app marked `superseded`, their replicas removed (redeploy) | none: past the pivot, failures are only logged | done |
 
-**Redeploy** adds a pivot: the old replica of the app may be removed only **after** the route points at the new one. Before the pivot every step is compensated by undoing it; after the pivot the saga only moves forward (cleanup is retried, never rolled back).
+**Redeploy** has a pivot: the old replica of the app is removed only **after** the route points at the new one and the new deploy is written `running`. Before the pivot every step is compensated by undoing it; after the pivot the saga only moves forward. So a redeploy has no downtime, and a failure to remove the old replica never touches the new deploy: the old deploy is already `superseded` and the leftover replica is removed by the startup garbage collection (below).
 
 ## Prerequisites already in place
 
@@ -54,7 +55,29 @@ The `deploys` table is both the **saga log** and the **work queue**: a deploy in
 
 **Startup check.** Once at startup (alongside the worker), every `running` deploy whose replica `{id}-r0` is on no reachable runner becomes `failed` ("replica is gone"), then the routes are re-applied from the database. A runner that does not answer is logged and its deploys are left alone: silence is not proof that the replica is gone. Bringing such a deploy back up is a separate feature.
 
-Compensations: `RemoveReplica` on route failure, on any error after the replica started, and when the app is deleted mid-deploy. Planned: old replica removal after the redeploy pivot.
+**Garbage collection.** In the same startup check, every replica on a reachable runner whose deploy is not `running` (or has no row) is removed: the leftovers of a redeploy whose cleanup failed, of a stop, or of a database wipe. Replicas of deploys still in flight (`queued`, `building`, `starting`) are kept, because a resumed deploy reuses its replica; replicas whose name is not `<deploy_id>-r<n>` are not touched; a node that does not answer is skipped.
+
+Compensations: `RemoveReplica` on route failure, on any error after the replica started, and when the app is deleted mid-deploy.
+
+## Final writes and the lease
+
+A write that ends the worker's job (`running`, `failed`, `superseded`) clears `lease_owner` and `lease_until` in the same fenced `UPDATE`. A heartbeat that finds its lease gone checks whether the deploy is finished (final status, empty owner) before treating it as taken: cleanup after the pivot, e.g. a slow `RemoveReplica`, must not be cancelled by the worker's own final write.
+
+## Deploy from an image: start and rollback
+
+A deploy is normally `queued → building → starting → running`. A deploy created **from an image** starts at `starting` with the `image` and `commit_sha` of an earlier deploy and `source_deploy_id` pointing at it; the worker skips `StartDeploy` and `GetDeploy` and goes straight to `RunReplica`. Everything after that (route, `running`, pivot) is the same saga, and the partial unique index still allows one active deploy per app.
+
+| Operation | Source image | Effect |
+|---|---|---|
+| `POST /apps/{name}/deploys` | built from the repository | normal deploy; a stopped app becomes wanted again |
+| `POST /apps/{name}/deploys/{id}/rollback` | that deploy | refused with 409 unless it reached `running` and has an image |
+| `POST /apps/{name}/start` | the newest deploy that reached `running` | 409 if there is none, or if the app is already running |
+
+A deploy "reached running" when it has an image and a `node` (the node is written together with `running`). A registry that has garbage-collected the image makes `RunReplica` fail, and the deploy ends `failed`.
+
+## Stop
+
+`apps.replicas` is the desired state (`0` stopped, `1` running; `0..N` comes with scaling). `POST /apps/{name}/stop` is refused while a deploy is in progress, then: `replicas = 0`, the running deploys become `stopped` (a final status), the routes are re-applied (the app gets the stopped page, see `ingress.md`), and only then are the replicas removed (best effort). Each step is its own transaction in its own domain; the order is chosen so that a failure in the middle leaves a state the startup check repairs.
 
 ## Deleting an app
 

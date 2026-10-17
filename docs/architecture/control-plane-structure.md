@@ -25,7 +25,7 @@ app/
     events.py     events this domain publishes (frozen dataclasses)
     tests/
     deps.py       Depends wiring for this domain
-  deploys/        same shape; services/worker.py claims deploys under a lease and services/runner.py holds the resumable saga steps;
+  deploys/        same shape; routers/lifecycle.py = stop, start, logs of an app; services/worker.py claims deploys under a lease and services/runner.py holds the resumable saga steps;
                   handlers.py = subscribers of other domains' events: thin entry points like routers, call services only (wired in main.py only)
   auth/           users, argon2 passwords, JWT access tokens; same layer folders; deps.py exports `CurrentUser`
   agents/         infrastructure: gRPC clients to node agents
@@ -57,6 +57,7 @@ app/
    - `DeployService.remove_app` (the `AppDeleted` handler) is a system action: the DELETE that published the event already checked ownership.
    - **`apps.owner_id` is `ForeignKey("users.id", ondelete="RESTRICT")`** (by table name, so `apps` does not import the auth model). A cascade would delete app rows while their replicas keep running on the nodes; a user with apps cannot be deleted until the apps are.
    - Import contracts: apps/deploys → auth only via routers; auth → apps/deploys forbidden; `auth.services`/`auth.repositories` stay free of FastAPI/Starlette and `auth.services` of sqlalchemy.
+10. **App variables are write-only.** `apps.env` (JSONB) holds the values; `AppOut` exposes `env_keys` only, built by `AppOut.from_app` (never `asdict`). `App.env` is excluded from `repr`, validation messages name keys and never values, and nothing logs the map. `PUT /apps/{name}/env` replaces the whole map and takes effect on the next deploy; the worker merges it under the platform variables (`PORT`, `FORWARDED_ALLOW_IPS`), which always win. The values are stored in plain text (limitation: no encryption at rest).
 
 ## Alternatives considered
 

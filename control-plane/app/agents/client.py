@@ -11,6 +11,7 @@ GET_DEPLOY_TIMEOUT = 10
 RUN_REPLICA_TIMEOUT = 300  # includes pulling the image on the node
 REMOVE_REPLICA_TIMEOUT = 30
 LIST_REPLICAS_TIMEOUT = 10
+LOGS_TIMEOUT = 10
 
 # HTTP/2 keepalive: a silently dead node becomes UNAVAILABLE instead of hanging.
 CHANNEL_OPTIONS: list[tuple[str, int]] = [
@@ -177,6 +178,20 @@ class AgentClients:
             for r in response.replicas
         ]
 
+    async def logs(self, node: str, replica_id: str, tail_lines: int) -> str:
+        """The last `tail_lines` lines of a replica's output (Logs without follow)."""
+        stub = self._runners.get(node)
+        if stub is None:
+            raise UnknownNodeError(node)
+        call = stub.Logs(
+            agent_pb2.LogsRequest(
+                replica_id=replica_id, follow=False, tail_lines=tail_lines
+            ),
+            timeout=LOGS_TIMEOUT,
+        )
+        chunks = [response.data async for response in call]
+        return b"".join(chunks).decode("utf-8", errors="replace")
+
     async def close(self) -> None:
         """Close every channel."""
         await self._builder_channel.close()
@@ -245,3 +260,5 @@ class Agents(Protocol):
     async def remove_replica(self, *, node: str, replica_id: str) -> None: ...
 
     async def list_replicas(self, node: str) -> list[ReplicaInfo]: ...
+
+    async def logs(self, *, node: str, replica_id: str, tail_lines: int) -> str: ...

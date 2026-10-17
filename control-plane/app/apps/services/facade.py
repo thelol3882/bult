@@ -25,3 +25,11 @@ class AppsFacade:
     async def get_app_unchecked(self, name: str) -> App:
         """System read for background work: no principal, AppNotFoundError if gone."""
         return await self._service.get_unchecked(name)
+
+    async def set_replicas(self, name: str, replicas: int, principal: Principal) -> App:
+        """Set the desired replica count (0 = stopped, 1 = running) of an app the principal owns."""
+        return await self._service.set_replicas(name, replicas, principal)
+
+    async def stopped_app_names(self) -> list[str]:
+        """System read: names of the apps whose desired replica count is 0."""
+        return await self._service.stopped_names()

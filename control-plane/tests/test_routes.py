@@ -58,3 +58,29 @@ def test_wait_applied_rejected_and_timeout(tmp_path):
     status_file.write_text(json.dumps({"generation": 3, "ok": True}))
     with pytest.raises(TimeoutError):
         asyncio.run(writer.wait_applied(4, timeout=0.3))
+
+
+def test_render_stopped_app_is_a_server_block_without_an_upstream():
+    files = render(
+        [Route("blog", "192.168.252.6", 20002)], "bult.localhost", stopped=["shop"]
+    )
+
+    assert sorted(files) == ["blog.conf", "shop.conf"]
+    shop = files["shop.conf"]
+    assert "server_name shop.bult.localhost;" in shop
+    assert "include /etc/nginx/bult/snippets/stopped.conf;" in shop
+    assert "proxy_pass" not in shop and "upstream" not in shop
+
+
+def test_a_route_wins_over_the_stopped_flag_for_the_same_name():
+    files = render([Route("blog", "192.168.252.6", 20002)], "bult.localhost", ["blog"])
+
+    assert "proxy_pass http://app_blog;" in files["blog.conf"]
+
+
+def test_apply_writes_stopped_apps(tmp_path):
+    writer = RouteWriter(tmp_path, "bult.localhost")
+
+    gen = writer.apply([], stopped=["shop"])
+
+    assert (tmp_path / "desired" / str(gen) / "shop.conf").exists()

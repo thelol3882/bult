@@ -1,6 +1,8 @@
 """Deploy storage behind a Protocol.
 
 Lifecycle: queued → building → starting → running; any active status → failed.
+A deploy created from an earlier image starts at `starting`. A running deploy ends as
+`superseded` (a newer one took over) or `stopped` (the app was stopped).
 Active deploys are the work queue: a worker claims one under a lease.
 """
 
@@ -10,7 +12,9 @@ from typing import Literal, Protocol
 
 from app.deploys.errors import DeployInProgressError
 
-DeployStatus = Literal["queued", "building", "starting", "running", "failed"]
+DeployStatus = Literal[
+    "queued", "building", "starting", "running", "failed", "superseded", "stopped"
+]
 ACTIVE_STATUSES: tuple[DeployStatus, ...] = ("queued", "building", "starting")
 
 
@@ -30,14 +34,20 @@ class Deploy:
     lease_owner: str = ""  # worker id holding the lease
     lease_until: datetime | None = None
     attempts: int = 0  # claims so far
+    source_deploy_id: str = ""  # set when the deploy reuses that deploy's image
+
+    @property
+    def restorable(self) -> bool:
+        """It has an image and ran at some point (`node` is written together with `running`)."""
+        return bool(self.image) and bool(self.node)
 
 
 LEASE_FIELDS = {"lease_owner", "lease_until", "attempts"}
 UPDATABLE_FIELDS = (
     {f.name for f in fields(Deploy)} - {"id", "app_name", "created_at"} - LEASE_FIELDS
 )
-# The lease holder may also release the lease (lease_until=None) and give back the attempt.
-OWNED_FIELDS = UPDATABLE_FIELDS | {"lease_until", "attempts"}
+# The lease holder may also release the lease and give back the attempt.
+OWNED_FIELDS = UPDATABLE_FIELDS | {"lease_owner", "lease_until", "attempts"}
 
 
 class DeployRepository(Protocol):
@@ -70,6 +80,14 @@ class DeployRepository(Protocol):
         ...
 
     async def list_all(self) -> list[Deploy]: ...
+    async def list_running(self, app_name: str) -> list[Deploy]:
+        """The app's deploys in status `running`, newest first."""
+        ...
+
+    async def latest_restorable(self, app_name: str) -> Deploy | None:
+        """The app's newest deploy that has an image and ran at some point."""
+        ...
+
     async def delete_for_app(self, app_name: str) -> None: ...
     async def list_for_app(
         self, app_name: str, before: tuple[datetime, str] | None, limit: int
@@ -149,6 +167,25 @@ class InMemoryDeployRepository:
 
     async def list_all(self) -> list[Deploy]:
         return [replace(d) for d in self._deploys.values()]
+
+    async def list_running(self, app_name: str) -> list[Deploy]:
+        running = [
+            d
+            for d in self._deploys.values()
+            if d.app_name == app_name and d.status == "running"
+        ]
+        running.sort(key=lambda d: (d.created_at, d.id), reverse=True)
+        return [replace(d) for d in running]
+
+    async def latest_restorable(self, app_name: str) -> Deploy | None:
+        candidates = [
+            d
+            for d in self._deploys.values()
+            if d.app_name == app_name and d.restorable
+        ]
+        if not candidates:
+            return None
+        return replace(max(candidates, key=lambda d: (d.created_at, d.id)))
 
     async def list_for_app(
         self, app_name: str, before: tuple[datetime, str] | None, limit: int

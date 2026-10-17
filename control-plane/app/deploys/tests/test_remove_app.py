@@ -11,7 +11,7 @@ from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.deploys import DeployService
 from app.deploys.uow import InMemoryDeploysUoW
 from app.ingress.routes import Route
-from tests.fakes import FakeAgentClients, FakeRoutes
+from tests.fakes import FakeAgentClients, FakeApps, FakeRoutes
 
 
 def _running(deploy_id: str, app_name: str, port: int) -> Deploy:
@@ -26,9 +26,8 @@ def _service(
     routes: FakeRoutes,
     settings: Settings,
 ) -> DeployService:
-    # apps is unused by remove_app.
     return DeployService(
-        lambda: uow, cast(AppsFacade, None), agents, routes, settings
+        lambda: uow, cast(AppsFacade, FakeApps()), agents, routes, settings
     )
 
 

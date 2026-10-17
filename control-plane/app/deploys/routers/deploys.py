@@ -47,3 +47,14 @@ async def get_deploy(
     name: str, deploy_id: str, service: DeployServiceDep, user: CurrentUser
 ) -> DeployOut:
     return DeployOut.model_validate(await service.get(name, deploy_id, user))
+
+
+@router.post(
+    "/{deploy_id}/rollback",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=DeployOut,
+)
+async def rollback(
+    name: str, deploy_id: str, service: DeployServiceDep, user: CurrentUser
+) -> DeployOut:
+    return DeployOut.model_validate(await service.rollback(name, deploy_id, user))

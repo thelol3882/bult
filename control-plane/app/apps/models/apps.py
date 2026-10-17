@@ -2,7 +2,8 @@
 
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import ForeignKey, String, text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.core.db import Base
@@ -16,6 +17,11 @@ class AppModel(UUIDv7PkMixin, TimestampMixin, Base):
     repo_url: Mapped[str] = mapped_column(String(), nullable=False)
     branch: Mapped[str] = mapped_column(String(), nullable=False)
     subdir: Mapped[str] = mapped_column(String(), server_default="")
+    replicas: Mapped[int] = mapped_column(server_default="1")  # desired: 0 = stopped
+    # Write-only for the API: only the keys are ever returned.
+    env: Mapped[dict[str, str]] = mapped_column(
+        JSONB(), server_default=text("'{}'::jsonb")
+    )
     # Table name, not UserModel: the apps domain must not import app.auth.
     # RESTRICT: a cascade would orphan the replicas running on the nodes.
     owner_id: Mapped[UUID] = mapped_column(

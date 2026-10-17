@@ -17,6 +17,7 @@ import grpc
 from app.agents.client import Agents, DeployResult, ReplicaInfo, ReplicaResult
 from app.apps.services.facade import AppNotFoundError, AppsFacade
 from app.deploys.repositories.deploys import Deploy
+from app.deploys.services.routing import stopped_apps
 from app.deploys.services.scheduler import pick_runner
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import (
@@ -36,6 +37,8 @@ DEFAULT_CPU_MILLICORES = 500
 DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024
 
 _FINAL_STATES = {"SUCCEEDED", "FAILED", "CANCELLED"}
+# A deploy written in one of these statuses is done with its worker: the lease goes with it.
+_LEASE_ENDS_WITH = {"running", "failed", "superseded"}
 _RETRYABLE_POLL = {grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED}
 MAX_POLL_FAILURES = 5
 
@@ -99,6 +102,9 @@ async def process_deploy(ctx: RunnerContext, deploy: Deploy) -> None:
         replica = await _ensure_replica(ctx, current)
         stage = "route"
         await _publish_and_finish(ctx, current, replica)
+
+    except AppNotFoundError:
+        _log_cancelled(deploy.id)
 
     except grpc.aio.AioRpcError as e:
         logger.warning(
@@ -196,6 +202,7 @@ async def _ensure_replica(ctx: RunnerContext, deploy: Deploy) -> ReplicaResult:
         logger.info("deploy %s: replica %s already on %s", deploy.id, replica_id, node)
         return ReplicaResult(replica_id, node, info.host_port)
 
+    app = await ctx.apps.get_app_unchecked(deploy.app_name)
     repository, _, digest = deploy.image.rpartition("@")
     return await ctx.agents.run_replica(
         node=pick_runner(ctx.agents.runner_names),
@@ -205,6 +212,8 @@ async def _ensure_replica(ctx: RunnerContext, deploy: Deploy) -> ReplicaResult:
         image_digest=digest,
         container_port=CONTAINER_PORT,
         env={
+            **app.env,
+            # Platform variables last: the user cannot override them.
             "PORT": str(CONTAINER_PORT),
             "FORWARDED_ALLOW_IPS": ctx.trusted_proxy,
         },
@@ -238,7 +247,8 @@ async def _publish_and_finish(
             )
             desired.append(this_route)
             try:
-                gen = ctx.routes.apply(desired)
+                stopped = await stopped_apps(ctx.apps, desired, deploy.app_name)
+                gen = ctx.routes.apply(desired, stopped)
                 await ctx.routes.wait_applied(gen)
             except (RouteApplyError, TimeoutError) as e:
                 logger.warning("deploy %s: route failed: %r", deploy.id, e)
@@ -264,9 +274,36 @@ async def _publish_and_finish(
         logger.info(
             "deploy %s running on %s:%d", deploy.id, replica.node, replica.host_port
         )
+        await _retire_previous(ctx, deploy)
     elif await _is_deleted(ctx, deploy.id):
         # Deleted during wait_applied: the AppDeleted handler re-applies the routes after us.
         await _remove_replica(ctx.agents, replica)
+
+
+async def _retire_previous(ctx: RunnerContext, deploy: Deploy) -> None:
+    """Pivot of a redeploy: the route points at `deploy`, so older running deploys of the app
+    become superseded and their replicas go. Never fails the new deploy; a replica left
+    behind is removed by the startup check.
+    """
+    try:
+        async with ctx.uow_factory() as uow:
+            older = [
+                d
+                for d in await uow.deploys.list_running(deploy.app_name)
+                if d.id != deploy.id
+            ]
+            for d in older:
+                _ = await uow.deploys.update(d.id, status="superseded")
+            await uow.commit()
+    except Exception:
+        logger.warning(
+            "deploy %s: could not supersede the previous deploys", deploy.id, exc_info=True
+        )
+        return
+
+    for d in older:
+        if await remove_replica_quietly(ctx.agents, d.node, f"{d.id}-r0"):
+            logger.info("deploy %s: superseded %s, its replica is removed", deploy.id, d.id)
 
 
 async def _fail(
@@ -285,6 +322,8 @@ async def _fail(
 
 async def _write(ctx: RunnerContext, deploy_id: str, **changes) -> Deploy | None:
     """One fenced write step in its own UoW; None if the deploy is gone or the lease was lost."""
+    if changes.get("status") in _LEASE_ENDS_WITH:
+        changes = {**changes, "lease_owner": "", "lease_until": None}
     async with ctx.uow_factory() as uow:
         deploy = await uow.deploys.update_owned(deploy_id, ctx.owner, **changes)
         if deploy is None:

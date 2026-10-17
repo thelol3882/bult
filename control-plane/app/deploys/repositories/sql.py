@@ -33,6 +33,7 @@ class SqlDeployRepository:
             node=deploy.node,
             host_port=deploy.host_port,
             error=deploy.error,
+            source_deploy_id=deploy.source_deploy_id,
         )
         self._session.add(model)
         try:
@@ -138,6 +139,27 @@ class SqlDeployRepository:
 
         return result
 
+    async def list_running(self, app_name: str) -> list[Deploy]:
+        rows = await self._session.scalars(
+            select(DeployModel)
+            .where(DeployModel.app_name == app_name, DeployModel.status == "running")
+            .order_by(DeployModel.created_at.desc(), DeployModel.id.desc())
+        )
+        return [_to_domain(row) for row in rows.all()]
+
+    async def latest_restorable(self, app_name: str) -> Deploy | None:
+        row = await self._session.scalar(
+            select(DeployModel)
+            .where(
+                DeployModel.app_name == app_name,
+                DeployModel.image != "",
+                DeployModel.node != "",
+            )
+            .order_by(DeployModel.created_at.desc(), DeployModel.id.desc())
+            .limit(1)
+        )
+        return None if row is None else _to_domain(row)
+
     async def list_for_app(
         self, app_name: str, before: tuple[datetime, str] | None, limit: int
     ) -> list[Deploy]:
@@ -178,4 +200,5 @@ def _to_domain(row: DeployModel) -> Deploy:
         lease_owner=row.lease_owner,
         lease_until=row.lease_until,
         attempts=row.attempts,
+        source_deploy_id=row.source_deploy_id,
     )

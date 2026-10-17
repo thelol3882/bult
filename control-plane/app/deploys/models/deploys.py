@@ -26,6 +26,7 @@ class DeployModel(TimestampMixin, Base):
     lease_owner: Mapped[str] = mapped_column(String(), server_default="")
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     attempts: Mapped[int] = mapped_column(Integer(), server_default="0")
+    source_deploy_id: Mapped[str] = mapped_column(String(), server_default="")
 
     __table_args__ = (
         Index("ix_deploys_app_created", "app_name", "created_at", "id"),

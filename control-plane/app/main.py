@@ -26,7 +26,11 @@ from app.core.middleware import TraceIdMiddleware
 from app.deploys import handlers as deploys_handlers
 from app.deploys.deps import build_deploy_service
 from app.deploys.routers import deploys as deploys_router
-from app.deploys.services.reconcile import fail_deploys_without_replica
+from app.deploys.routers import lifecycle as lifecycle_router
+from app.deploys.services.reconcile import (
+    fail_deploys_without_replica,
+    remove_orphan_replicas,
+)
 from app.deploys.services.worker import DeployWorker
 from app.deploys.uow import sql_deploys_uow_factory
 from app.ingress.routes import RouteWriter
@@ -87,17 +91,35 @@ async def lifespan(app: FastAPI):
 
 
 async def _startup_check(app: FastAPI) -> None:
-    """Deploys marked running whose replica vanished (wiped node, restarted VM) become failed."""
+    """Reconcile the database with the nodes after a start.
+
+    Deploys marked running whose replica vanished (wiped node, restarted VM) become failed;
+    replicas whose deploy is not running (leftovers of a redeploy or stop) are removed.
+    """
     state = app.state
+    apps = build_apps_facade(
+        uow_factory=state.apps_uow_factory,
+        settings=state.settings,
+        events=state.event_bus.collector(),
+    )
     try:
         failed = await fail_deploys_without_replica(
-            state.agents, state.deploys_uow_factory, state.routes, state.settings.runners
+            state.agents,
+            state.deploys_uow_factory,
+            state.routes,
+            state.settings.runners,
+            apps,
+        )
+        removed = await remove_orphan_replicas(
+            state.agents, state.deploys_uow_factory
         )
     except Exception:
         logger.exception("startup check failed")
         return
     if failed:
         logger.warning("startup check: %d deploy(s) lost their replica", len(failed))
+    if removed:
+        logger.warning("startup check: removed %d orphan replica(s)", len(removed))
 
 
 def _build_event_bus(app: FastAPI) -> EventBus:
@@ -142,5 +164,6 @@ def create_app() -> FastAPI:
     app.include_router(auth_router.router)
     app.include_router(apps_router.router)
     app.include_router(deploys_router.router)
+    app.include_router(lifecycle_router.router)
 
     return app

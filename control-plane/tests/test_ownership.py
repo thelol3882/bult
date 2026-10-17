@@ -33,6 +33,11 @@ def blog(client: TestClient, deploys_uow: InMemoryDeploysUoW) -> None:
         ("POST", "/apps/blog/deploys", None),
         ("GET", "/apps/blog/deploys", None),
         ("GET", "/apps/blog/deploys/d1", None),
+        ("POST", "/apps/blog/deploys/d1/rollback", None),
+        ("POST", "/apps/blog/stop", None),
+        ("POST", "/apps/blog/start", None),
+        ("PUT", "/apps/blog/env", {"env": {"A": "1"}}),
+        ("GET", "/apps/blog/logs", None),
     ],
 )
 def test_other_user_gets_403(bob: TestClient, method: str, path: str, body: dict | None):
@@ -49,9 +54,14 @@ def test_forbidden_requests_change_nothing(
     bob.patch("/apps/blog", json={"branch": "dev"})
     bob.delete("/apps/blog")
     bob.post("/apps/blog/deploys")
+    bob.post("/apps/blog/stop")
+    bob.put("/apps/blog/env", json={"env": {"A": "1"}})
 
-    assert client.get("/apps/blog").json()["branch"] == "main"
+    app = client.get("/apps/blog").json()
+    assert app["branch"] == "main"
+    assert (app["replicas"], app["env_keys"]) == (1, [])
     assert agents.start_calls == []
+    assert agents.remove_calls == []
 
 
 @pytest.mark.usefixtures("blog")
@@ -95,6 +105,11 @@ def test_app_name_taken_across_users(client: TestClient, bob: TestClient):
         ("POST", "/apps/blog/deploys"),
         ("GET", "/apps/blog/deploys"),
         ("GET", "/apps/blog/deploys/d1"),
+        ("POST", "/apps/blog/deploys/d1/rollback"),
+        ("POST", "/apps/blog/stop"),
+        ("POST", "/apps/blog/start"),
+        ("PUT", "/apps/blog/env"),
+        ("GET", "/apps/blog/logs"),
     ],
 )
 def test_no_token_is_401(anon_client: TestClient, method: str, path: str):

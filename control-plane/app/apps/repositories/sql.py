@@ -23,6 +23,8 @@ class SqlAppRepository:
             repo_url=app.repo_url,
             subdir=app.subdir,
             owner_id=app.owner_id,
+            replicas=app.replicas,
+            env=app.env,
         )
         self._session.add(model)
         try:
@@ -58,6 +60,12 @@ class SqlAppRepository:
         )
         return result.scalar_one()
 
+    async def list_stopped(self) -> list[str]:
+        rows = await self._session.scalars(
+            select(AppModel.name).where(AppModel.replicas == 0).order_by(AppModel.name)
+        )
+        return list(rows.all())
+
     async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]:
         rows = await self._session.scalars(
             select(AppModel)
@@ -91,4 +99,6 @@ def _to_domain(row: AppModel) -> App:
         subdir=row.subdir,
         owner_id=row.owner_id,
         created_at=row.created_at,
+        replicas=row.replicas,
+        env=dict(row.env),
     )

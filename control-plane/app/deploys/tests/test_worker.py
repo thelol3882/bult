@@ -2,10 +2,12 @@
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+from typing import cast
 
 import pytest
 
 from app.agents.client import DeployResult
+from app.apps.services.facade import AppsFacade
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.reconcile import fail_deploys_without_replica
 from app.deploys.uow import InMemoryDeploysUoW
@@ -16,6 +18,7 @@ from tests.fakes import (
     IMAGE_REPOSITORY,
     RUNNERS,
     FakeAgentClients,
+    FakeApps,
     FakeRoutes,
     make_worker,
     rpc_error,
@@ -342,7 +345,7 @@ def test_startup_check_fails_running_deploy_without_replica_and_drops_its_route(
         await deploys_uow.deploys.add(_running("d-shop", "shop", 30002))
         agents.seed_replica("d-shop-r0", "shop", port=30002)  # blog's replica is gone
         return await fail_deploys_without_replica(
-            agents, lambda: deploys_uow, routes, RUNNERS
+            agents, lambda: deploys_uow, routes, RUNNERS, cast(AppsFacade, FakeApps())
         )
 
     failed = asyncio.run(scenario())
@@ -364,7 +367,7 @@ def test_startup_check_leaves_deploys_of_an_unreachable_node_alone(
     async def scenario() -> list[str]:
         await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
         return await fail_deploys_without_replica(
-            agents, lambda: deploys_uow, routes, RUNNERS
+            agents, lambda: deploys_uow, routes, RUNNERS, cast(AppsFacade, FakeApps())
         )
 
     assert asyncio.run(scenario()) == []

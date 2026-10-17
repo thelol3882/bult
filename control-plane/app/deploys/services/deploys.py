@@ -3,15 +3,25 @@
 import logging
 import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import datetime
 
-from app.agents.client import Agents
-from app.apps.services.facade import AppsFacade
+import grpc
+
+from app.agents.client import Agents, UnknownNodeError
+from app.apps.services.facade import App, AppsFacade
 from app.core.config import Settings
 from app.core.error_codes import ErrorCode
-from app.core.errors import NotFoundError
+from app.core.errors import (
+    ConflictError,
+    InternalError,
+    NotFoundError,
+    ServiceUnavailableError,
+)
 from app.core.principal import Principal
-from app.deploys.repositories.deploys import Deploy
+from app.deploys.errors import DeployInProgressError
+from app.deploys.repositories.deploys import ACTIVE_STATUSES, Deploy
+from app.deploys.services.routing import stopped_apps
 from app.deploys.services.runner import remove_replica_quietly
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter, running_routes
@@ -26,6 +36,52 @@ class DeployNotFoundError(NotFoundError):
 
     def __init__(self, deploy_id: str) -> None:
         super().__init__(f"Deploy '{deploy_id}' not found.")
+
+
+class NothingToStartError(ConflictError):
+    """The app never ran, so there is no image to start."""
+
+    code = ErrorCode.NOTHING_TO_START
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"App '{name}' has nothing to start: deploy the app first.")
+
+
+class AppAlreadyRunningError(ConflictError):
+    """Start of an app that is up."""
+
+    code = ErrorCode.APP_ALREADY_RUNNING
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"App '{name}' is already running.")
+
+
+class DeployNotRestorableError(ConflictError):
+    """The deploy never ran or has no image to reuse."""
+
+    code = ErrorCode.DEPLOY_NOT_RESTORABLE
+
+    def __init__(self, deploy_id: str) -> None:
+        super().__init__(
+            f"Deploy '{deploy_id}' never ran or has no image, so it cannot be restored."
+        )
+
+
+class NodeUnavailableError(ServiceUnavailableError):
+    """The node with the replica did not answer."""
+
+    code = ErrorCode.NODE_UNAVAILABLE
+
+    def __init__(self) -> None:
+        super().__init__("The node running the app is not reachable. Try again later.")
+
+
+@dataclass(frozen=True)
+class AppLogs:
+    """The tail of the output of the app's running replica."""
+
+    deploy_id: str | None  # None: nothing is running
+    lines: list[str]
 
 
 class DeployService:
@@ -46,10 +102,128 @@ class DeployService:
     async def start(self, app_name: str, principal: Principal) -> Deploy:
         """Queue a deploy; the worker does the rest. DeployInProgressError if one is active."""
         app = await self._apps.get_app(app_name, principal)
+        deploy = await self._queue(Deploy(id=uuid.uuid4().hex, app_name=app.name))
+        await self._wake(app, principal)
+        return deploy
+
+    async def stop_app(self, app_name: str, principal: Principal) -> None:
+        """replicas -> 0: deploys `stopped`, routes re-applied (stopped page), replicas removed."""
+        await self._apps.get_app(app_name, principal)
+        await self._reject_if_deploy_active(app_name)
+        _ = await self._apps.set_replicas(app_name, 0, principal)
+
         async with self._uow_factory() as uow:
-            deploy = await uow.deploys.add(Deploy(id=uuid.uuid4().hex, app_name=app.name))
+            running = await uow.deploys.list_running(app_name)
+            for deploy in running:
+                _ = await uow.deploys.update(deploy.id, status="stopped")
+            await uow.commit()
+
+        # Routes first: stop sending traffic, then remove the replicas.
+        _ = await self._reapply_routes(f"stop {app_name}")
+        for deploy in running:
+            _ = await remove_replica_quietly(
+                self._agents, deploy.node, f"{deploy.id}-r0"
+            )
+
+    async def start_app(self, app_name: str, principal: Principal) -> Deploy:
+        """Run the app again from the image of the last deploy that ran: no build."""
+        app = await self._apps.get_app(app_name, principal)
+        async with self._uow_factory() as uow:
+            if app.replicas == 1 and await uow.deploys.list_running(app_name):
+                raise AppAlreadyRunningError(app_name)
+            source = await uow.deploys.latest_restorable(app_name)
+        if source is None:
+            raise NothingToStartError(app_name)
+        return await self._queue_from_image(app, source, principal)
+
+    async def rollback(
+        self, app_name: str, deploy_id: str, principal: Principal
+    ) -> Deploy:
+        """Run the image of an earlier deploy as a new deploy: no build."""
+        app = await self._apps.get_app(app_name, principal)
+        async with self._uow_factory() as uow:
+            source = await uow.deploys.get(deploy_id)
+        if source is None or source.app_name != app_name:
+            raise DeployNotFoundError(deploy_id)
+        if not source.restorable:
+            raise DeployNotRestorableError(deploy_id)
+        return await self._queue_from_image(app, source, principal)
+
+    async def logs(self, app_name: str, tail: int, principal: Principal) -> AppLogs:
+        """Last `tail` lines of the replica of the running deploy."""
+        await self._apps.get_app(app_name, principal)
+        async with self._uow_factory() as uow:
+            running = await uow.deploys.list_running(app_name)
+        if not running:
+            return AppLogs(deploy_id=None, lines=[])
+
+        deploy = running[0]
+        try:
+            text = await self._agents.logs(
+                node=deploy.node, replica_id=f"{deploy.id}-r0", tail_lines=tail
+            )
+        except grpc.aio.AioRpcError as e:
+            code = e.code()
+            if code == grpc.StatusCode.NOT_FOUND:  # the replica vanished: nothing to show
+                return AppLogs(deploy.id, [])
+            logger.warning("logs %s: %s %s", app_name, code.name, e.details())
+            if code in (grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED):
+                raise NodeUnavailableError() from None
+            raise InternalError("Could not read the logs.") from None
+        except UnknownNodeError:
+            logger.warning("logs %s: unknown node %s", app_name, deploy.node)
+            raise InternalError("Could not read the logs.") from None
+        return AppLogs(deploy.id, text.splitlines()[-tail:])
+
+    async def _queue(self, deploy: Deploy) -> Deploy:
+        async with self._uow_factory() as uow:
+            deploy = await uow.deploys.add(deploy)
             await uow.commit()
         return deploy
+
+    async def _queue_from_image(
+        self, app: App, source: Deploy, principal: Principal
+    ) -> Deploy:
+        """A deploy that starts at `starting` with the source's image (StartDeploy is skipped)."""
+        deploy = await self._queue(
+            Deploy(
+                id=uuid.uuid4().hex,
+                app_name=app.name,
+                status="starting",
+                commit_sha=source.commit_sha,
+                image=source.image,
+                source_deploy_id=source.id,
+            )
+        )
+        await self._wake(app, principal)
+        return deploy
+
+    async def _wake(self, app: App, principal: Principal) -> None:
+        """A new deploy of a stopped app makes it wanted again."""
+        if app.replicas == 0:
+            _ = await self._apps.set_replicas(app.name, 1, principal)
+
+    async def _reject_if_deploy_active(self, app_name: str) -> None:
+        async with self._uow_factory() as uow:
+            # An active deploy is always the newest: a second one is refused while it lives.
+            newest = await uow.deploys.list_for_app(app_name, None, 1)
+        if newest and newest[0].status in ACTIVE_STATUSES:
+            raise DeployInProgressError(app_name)
+
+    async def _reapply_routes(self, what: str) -> int | None:
+        """Render the routes from the database and wait for the sidecar; None if that failed."""
+        async with self._routes.lock:
+            async with self._uow_factory() as uow:
+                deploys = await uow.deploys.list_all()
+            desired = running_routes(deploys, self._settings.runners)
+            try:
+                stopped = await stopped_apps(self._apps, desired)
+                gen = self._routes.apply(desired, stopped)
+                await self._routes.wait_applied(gen)
+            except (RouteApplyError, TimeoutError) as e:
+                logger.warning("%s: route update failed: %r", what, e)
+                return None
+        return gen
 
     async def get(self, app_name: str, deploy_id: str, principal: Principal) -> Deploy:
         """DeployNotFoundError if missing OR if it belongs to another app."""
@@ -83,16 +257,7 @@ class DeployService:
 
         # Routes first: stop sending traffic, then remove the replicas.
         # Always re-applied: a deploy in flight may have published this app's route already.
-        gen: int | None = None
-        async with self._routes.lock:
-            async with self._uow_factory() as uow:
-                deploys = await uow.deploys.list_all()
-            desired = running_routes(deploys, self._settings.runners)
-            try:
-                gen = self._routes.apply(desired)
-                await self._routes.wait_applied(gen)
-            except (RouteApplyError, TimeoutError) as e:
-                logger.warning("delete %s: route update failed: %r", app_name, e)
+        gen = await self._reapply_routes(f"delete {app_name}")
 
         found = 0
         removed = 0

@@ -36,6 +36,7 @@ forbidden_modules =
 ignore_imports =
     app.apps.routers.apps -> app.auth.deps
     app.deploys.routers.deploys -> app.auth.deps
+    app.deploys.routers.lifecycle -> app.auth.deps
 
 [importlinter:contract:auth-independent]
 name = The auth domain knows nothing about apps or deploys

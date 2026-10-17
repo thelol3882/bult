@@ -10,8 +10,9 @@ from pydantic import (
     Field,
     HttpUrl,
     field_validator,
-    model_validator,
 )
+
+from app.apps.repositories.apps import App
 
 # Platform-owned names that must not become app subdomains.
 RESERVED_NAMES: frozenset[str] = frozenset({"api", "www", "admin", "registry"})
@@ -22,6 +23,47 @@ NAME_FORMAT_MESSAGE = (
     "Use lowercase letters, digits and hyphens (up to 63 characters); "
     "must start and end with a letter or digit."
 )
+
+
+ENV_KEY_REGEX = re.compile(r"^[A-Z_][A-Z0-9_]*$")
+ENV_RESERVED_KEYS: frozenset[str] = frozenset({"PORT", "FORWARDED_ALLOW_IPS"})
+ENV_RESERVED_PREFIX = "BULT_"
+ENV_MAX_KEYS = 100
+ENV_MAX_KEY_LENGTH = 128
+ENV_MAX_VALUE_BYTES = 4096
+
+
+class EnvUpdate(BaseModel):
+    """Request body of PUT /apps/{name}/env: the complete set of variables.
+
+    Messages name keys, never values: the values are secrets.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    env: dict[str, str]
+
+    @field_validator("env")
+    @classmethod
+    def validate_env(cls, env: dict[str, str]) -> dict[str, str]:
+        if len(env) > ENV_MAX_KEYS:
+            raise ValueError(f"At most {ENV_MAX_KEYS} variables are allowed.")
+        for key, value in env.items():
+            if len(key) > ENV_MAX_KEY_LENGTH or not ENV_KEY_REGEX.fullmatch(key):
+                raise ValueError(
+                    f"Invalid variable name '{key[:ENV_MAX_KEY_LENGTH]}': "
+                    "use uppercase letters, digits and underscores, "
+                    "not starting with a digit."
+                )
+            if key in ENV_RESERVED_KEYS or key.startswith(ENV_RESERVED_PREFIX):
+                raise ValueError(f"Variable '{key}' is reserved by the platform.")
+            if len(value.encode()) > ENV_MAX_VALUE_BYTES:
+                raise ValueError(
+                    f"The value of '{key}' is longer than {ENV_MAX_VALUE_BYTES} bytes."
+                )
+            if "\x00" in value:
+                raise ValueError(f"The value of '{key}' contains a NUL character.")
+        return env
 
 
 class AppUpdate(BaseModel):
@@ -100,3 +142,19 @@ class AppOut(BaseModel):
     subdir: str
     created_at: datetime
     url: str  # built by AppService.url
+    replicas: int
+    env_keys: list[str]  # names only: the values are write-only
+
+    @classmethod
+    def from_app(cls, app: App, url: str) -> "AppOut":
+        return cls(
+            name=app.name,
+            preset=app.preset,  # pyright: ignore[reportArgumentType]
+            repo_url=app.repo_url,
+            branch=app.branch,
+            subdir=app.subdir,
+            created_at=app.created_at,  # pyright: ignore[reportArgumentType]
+            url=url,
+            replicas=app.replicas,
+            env_keys=sorted(app.env),
+        )

@@ -5,7 +5,7 @@ from collections.abc import Callable
 from app.apps.errors import AppForbiddenError, AppNameTakenError, AppNotFoundError
 from app.apps.events import AppDeleted
 from app.apps.repositories.apps import App
-from app.apps.schemas.apps import AppCreate, AppUpdate
+from app.apps.schemas.apps import AppCreate, AppUpdate, EnvUpdate
 from app.apps.uow import AppsUoW
 from app.core.config import Settings
 from app.core.events import EventPublisher
@@ -67,6 +67,28 @@ class AppService:
             if result is None:
                 raise AppNotFoundError(name)
 
+            await uow.commit()
+            return result
+
+    async def set_env(self, name: str, data: EnvUpdate, principal: Principal) -> App:
+        """Replace the whole variable map; it reaches the app on its next deploy."""
+        return await self._change(name, principal, env=data.env)
+
+    async def set_replicas(self, name: str, replicas: int, principal: Principal) -> App:
+        """Desired number of replicas (0 = stopped, 1 = running)."""
+        return await self._change(name, principal, replicas=replicas)
+
+    async def stopped_names(self) -> list[str]:
+        """Names of the stopped apps (system read for the route generator)."""
+        async with self._uow_factory() as uow:
+            return await uow.apps.list_stopped()
+
+    async def _change(self, name: str, principal: Principal, **changes) -> App:
+        async with self._uow_factory() as uow:
+            await self._owned(uow, name, principal)
+            result = await uow.apps.update(name, **changes)
+            if result is None:
+                raise AppNotFoundError(name)
             await uow.commit()
             return result
 

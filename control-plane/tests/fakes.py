@@ -1,6 +1,6 @@
 """Fakes shared by the tests of several domains."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterable
 from datetime import datetime
 from pathlib import Path
 from typing import Any, cast
@@ -59,10 +59,13 @@ class FakeRoutes(RouteWriter):
     def __init__(self, base_dir: Path, domain: str) -> None:
         super().__init__(base_dir, domain)
         self.applied: list[list[Route]] = []
+        self.applied_stopped: list[list[str]] = []
 
-    def apply(self, routes: list[Route]) -> int:
+    def apply(self, routes: list[Route], stopped: Iterable[str] = ()) -> int:
+        stopped = list(stopped)
         self.applied.append(list(routes))
-        return super().apply(routes)
+        self.applied_stopped.append(stopped)
+        return super().apply(routes, stopped)
 
     async def wait_applied(self, generation: int, timeout: float = 10.0) -> None:
         return None
@@ -92,6 +95,9 @@ class FakeAgentClients:
         self.run_calls: list[dict[str, Any]] = []
         self.remove_calls: list[dict[str, Any]] = []
         self.list_error: AioRpcError | None = None
+        self.log_text = ""
+        self.log_error: AioRpcError | None = None
+        self.log_calls: list[dict[str, Any]] = []
         # What the "nodes" run: node -> replica_id -> replica.
         self.replicas: dict[str, dict[str, ReplicaInfo]] = {}
 
@@ -155,15 +161,31 @@ class FakeAgentClients:
             raise self.list_error
         return list(self.replicas.get(node, {}).values())
 
+    async def logs(self, node: str, replica_id: str, tail_lines: int) -> str:
+        self.log_calls.append(
+            {"node": node, "replica_id": replica_id, "tail_lines": tail_lines}
+        )
+        if self.log_error is not None:
+            raise self.log_error
+        return self.log_text
+
     async def close(self) -> None:
         pass
 
 
 class FakeApps:
-    """The part of AppsFacade the worker uses."""
+    """The part of AppsFacade the worker and the deploy service use."""
 
-    def __init__(self, missing: bool = False) -> None:
+    def __init__(
+        self,
+        missing: bool = False,
+        env: dict[str, str] | None = None,
+        stopped: list[str] | None = None,
+    ) -> None:
         self.missing = missing
+        self.env = env or {}
+        self.stopped = stopped or []
+        self.replicas_set: list[tuple[str, int]] = []
 
     async def get_app_unchecked(self, name: str) -> App:
         if self.missing:
@@ -174,7 +196,11 @@ class FakeApps:
             repo_url="https://github.com/example/blog.git",
             branch="main",
             subdir="",
+            env=self.env,
         )
+
+    async def stopped_app_names(self) -> list[str]:
+        return list(self.stopped)
 
 
 def make_worker(

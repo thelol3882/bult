@@ -15,7 +15,7 @@ from datetime import UTC, datetime, timedelta
 
 from app.agents.client import Agents
 from app.apps.services.facade import AppsFacade
-from app.deploys.repositories.deploys import Deploy
+from app.deploys.repositories.deploys import ACTIVE_STATUSES, Deploy
 from app.deploys.services.runner import RunnerContext, process_deploy
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteWriter
@@ -170,9 +170,23 @@ class DeployWorker:
                 logger.warning("deploy %s: lease renewal failed", deploy_id, exc_info=True)
                 continue
             if not renewed:
+                if await self._is_finished(deploy_id):
+                    return  # the final write cleared the lease; the work is only cleaning up
                 logger.warning("deploy %s: lease was taken, cancelling work", deploy_id)
                 work.cancel()
                 return
+
+    async def _is_finished(self, deploy_id: str) -> bool:
+        try:
+            async with self._uow_factory() as uow:
+                deploy = await uow.deploys.get(deploy_id)
+        except Exception:
+            return False
+        return (
+            deploy is not None
+            and deploy.status not in ACTIVE_STATUSES
+            and deploy.lease_owner == ""
+        )
 
     async def _release(self, deploy_id: str) -> None:
         """Hand the lease back; a graceful stop is not a failed attempt."""

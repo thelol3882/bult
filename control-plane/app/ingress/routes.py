@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Protocol
 
 PROXY_CONNECT_TIMEOUT = "3s"  # a dead node must not stall requests for the 60 s default
+STOPPED_SNIPPET = "/etc/nginx/bult/snippets/stopped.conf"  # lives in deploy/nginx
 
 
 def node_ip(runner_address: str) -> str:
@@ -31,9 +32,20 @@ class RouteApplyError(Exception):
     """The sidecar rejected the version (`nginx -t` failed)."""
 
 
-def render(routes: list[Route], domain: str) -> dict[str, str]:
-    """Filename -> nginx config, one server block and upstream per app."""
+def render(
+    routes: list[Route], domain: str, stopped: Iterable[str] = ()
+) -> dict[str, str]:
+    """Filename -> nginx config: a server block and upstream per app, a 503 page per stopped app."""
     files = {}
+    for name in stopped:
+        files[f"{name}.conf"] = f"""\
+server {{
+    listen 80;
+    server_name {name}.{domain};
+
+    include {STOPPED_SNIPPET};
+}}
+"""
     for r in routes:
         files[f"{r.name}.conf"] = f"""\
 upstream app_{r.name} {{
@@ -89,14 +101,17 @@ class RouteWriter:
         """Hold it while collecting the desired routes and calling apply()."""
         return self._lock
 
-    def apply(self, routes: list[Route]) -> int:
-        """Write the next version atomically; return its generation."""
+    def apply(self, routes: list[Route], stopped: Iterable[str] = ()) -> int:
+        """Write the next version atomically; return its generation.
+
+        `stopped` names the apps that answer with the "stopped" page instead of a route.
+        """
         gen = self.last_gen + 1
 
         tmp_dir = self.desired_dir / f".tmp-{gen}"
         shutil.rmtree(tmp_dir, ignore_errors=True)
         tmp_dir.mkdir()
-        for filename, text in render(routes, self.domain).items():
+        for filename, text in render(routes, self.domain, stopped).items():
             (tmp_dir / filename).write_text(text)
         os.rename(tmp_dir, self.desired_dir / str(gen))
 

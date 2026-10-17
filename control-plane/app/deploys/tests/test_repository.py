@@ -102,8 +102,11 @@ def test_update_cannot_touch_lease_fields_but_the_owner_can_release():
 
     with pytest.raises(TypeError):
         asyncio.run(repo.update("d1", lease_owner="w2"))
-    with pytest.raises(TypeError):
-        asyncio.run(repo.update_owned("d1", "w1", lease_owner="w2"))
 
     released = asyncio.run(repo.update_owned("d1", "w1", lease_until=None, attempts=0))
     assert released is not None and released.lease_until is None
+
+    # A final write clears the owner too; after that the old owner is fenced out.
+    cleared = asyncio.run(repo.update_owned("d1", "w1", lease_owner="", status="running"))
+    assert cleared is not None and cleared.lease_owner == ""
+    assert asyncio.run(repo.update_owned("d1", "w1", status="failed")) is None

@@ -1,6 +1,6 @@
 """App storage behind a Protocol."""
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Protocol
 from uuid import UUID
@@ -20,6 +20,9 @@ class App:
     owner_id: UUID | None = None
     id: UUID | None = None
     created_at: datetime | None = None
+    replicas: int = 1  # desired state: 1 = running, 0 = stopped
+    # Secret values: kept out of repr so they cannot reach a log line.
+    env: dict[str, str] = field(default_factory=dict, repr=False)
 
 
 class AppRepository(Protocol):
@@ -29,6 +32,9 @@ class AppRepository(Protocol):
     async def get(self, name: str) -> App | None: ...
     async def update(self, name: str, **changes) -> App | None: ...
     async def count(self, owner_id: UUID) -> int: ...
+    async def list_stopped(self) -> list[str]:
+        """Names of the apps with replicas == 0."""
+        ...
     async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]: ...
     async def delete(self, name: str) -> bool:
         """True if the app existed."""
@@ -64,11 +70,13 @@ class InMemoryAppRepository:
     async def count(self, owner_id: UUID) -> int:
         return len(self._owned(owner_id))
 
+    async def list_stopped(self) -> list[str]:
+        return sorted(a.name for a in self._apps.values() if a.replicas == 0)
+
     async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]:
         return sorted(self._owned(owner_id), key=lambda a: a.name)[
             offset : offset + limit
         ]
-
 
     async def delete(self, name: str) -> bool:
         return self._apps.pop(name, None) is not None

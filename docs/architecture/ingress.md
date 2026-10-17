@@ -28,10 +28,25 @@ This is the same model as ingress-nginx in Kubernetes or consul-template: the ag
 - **Generations compared for equality.** The API waits until `status.json.generation` equals the version it wrote; on startup it continues numbering from disk.
 - **Polling (1 s), not inotify.** File events are unreliable across Docker Desktop mounts on macOS.
 
+## Stopped apps
+
+An app with `replicas = 0` still has a name, so its subdomain must not look like "no such app". The generator emits a server block for it that includes `deploy/nginx/snippets/stopped.conf`: `503` and the static page `deploy/nginx/pages/stopped.html`, without `Retry-After` (nothing will bring the app back by itself) and with `Cache-Control: no-store`. The page is served by an `internal` location through `error_page 503`, so the status stays 503 and the page is not reachable as `/stopped.html`. A subdomain nobody owns still gets the default server's `404`.
+
+```
+server {
+    listen 80;
+    server_name <name>.<domain>;
+
+    include /etc/nginx/bult/snippets/stopped.conf;
+}
+```
+
+The snippet and the page live in the mounted `deploy/nginx` directory, next to the other platform config, so the sidecar's `nginx -t` checks them with the rest. A running route wins: an app is rendered as stopped only when it has no running deploy.
+
 ## Lifecycle
 
 - A deploy becomes `running` only after its route is applied (`status.json` confirms the generation), so `running` means "the URL works".
-- Deleting an app re-applies routes without it.
+- Deleting an app re-applies routes without it; stopping one re-applies them with the stopped block.
 - Upstreams point at `node_ip:host_port`; a short `proxy_connect_timeout` keeps a dead node from stalling requests for 60 s.
 
 ## Limitations
