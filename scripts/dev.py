@@ -20,6 +20,10 @@ Configuration (environment variables, all optional):
     DATABASE_URL       database for the db-* commands (default: the compose Postgres on localhost)
 
 Control plane commands need `uv`; they start the compose Postgres when it is not running.
+
+`smoke` runs scripts/smoke.py against a running stack (after `demo-up`): register, deploy,
+redeploy, env, logs, stop/start, rollback, cancel, delete. Options after the command go to
+the script (`smoke --keep`, `smoke --help`).
 """
 
 from __future__ import annotations
@@ -330,6 +334,12 @@ def cmd_demo_down(args: argparse.Namespace) -> None:
     run(["multipass", "stop", *DEMO_NODES])
 
 
+def cmd_smoke(args: argparse.Namespace) -> None:
+    """Lifecycle check against a running stack (demo-up first); extra args go to scripts/smoke.py."""
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "smoke.py"), *args.smoke_args])
+    sys.exit(result.returncode)
+
+
 # --- control plane --------------------------------------------------------
 
 
@@ -399,6 +409,7 @@ COMMANDS = {
     "down": cmd_down,
     "demo-up": cmd_demo_up,
     "demo-down": cmd_demo_down,
+    "smoke": cmd_smoke,
     "db-up": cmd_db_up,
     "migrate": cmd_migrate,
     "makemigrations": cmd_makemigrations,
@@ -427,6 +438,8 @@ def main() -> None:
             p.add_argument("revision", nargs="?", default="-1")
         if name == "makemigrations":
             p.add_argument("-m", "--message", required=True, help='e.g. "users"')
+        if name == "smoke":
+            p.add_argument("smoke_args", nargs=argparse.REMAINDER, help="passed to smoke.py, e.g. --keep")
         if name == "cp-test":
             p.add_argument("pytest_args", nargs=argparse.REMAINDER)
         p.set_defaults(func=func)
