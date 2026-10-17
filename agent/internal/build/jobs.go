@@ -19,9 +19,26 @@ var (
 	ErrInvalidAppID    = errors.New("invalid app id")
 	// ErrDeploySpecMismatch: known deploy_id, different app or source (ALREADY_EXISTS).
 	ErrDeploySpecMismatch = errors.New("deploy exists with a different spec")
-	errClone              = errors.New("clone failed")
 	errBuild              = errors.New("build failed")
 )
+
+// Default deadlines of the two network-bound steps of a job.
+const (
+	DefaultCloneTimeout = 2 * time.Minute
+	DefaultBuildTimeout = 15 * time.Minute
+)
+
+// buildTimeoutError: the build+push deadline expired.
+type buildTimeoutError struct {
+	after time.Duration
+	err   error
+}
+
+func (e *buildTimeoutError) Error() string {
+	return fmt.Sprintf("build timed out after %s", e.after)
+}
+
+func (e *buildTimeoutError) Unwrap() error { return e.err }
 
 // Deploy IDs must be 1-64 chars: alphanumeric plus '-' and '.'.
 // Slashes, path traversal, underscores, or lengths > 64 are rejected.
@@ -66,6 +83,9 @@ type Manager struct {
 	clone     cloneFunc
 	registry  string // e.g. 192.168.252.1:5050 — from the agent's config
 
+	cloneTimeout time.Duration
+	buildTimeout time.Duration
+
 	mu   sync.Mutex
 	jobs map[string]*job
 }
@@ -82,7 +102,16 @@ func NewManager(parent context.Context, store *Store, builder imageBuilder, regi
 		clone:     Clone,
 		registry:  registry,
 		jobs:      make(map[string]*job),
+
+		cloneTimeout: DefaultCloneTimeout,
+		buildTimeout: DefaultBuildTimeout,
 	}
+}
+
+// SetTimeouts overrides the clone and build deadlines. Call before Start.
+func (m *Manager) SetTimeouts(clone, build time.Duration) {
+	m.cloneTimeout = clone
+	m.buildTimeout = build
 }
 
 // Start validates spec and starts its build in the background.
@@ -259,9 +288,13 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 	}
 	defer logFile.Close()
 
-	checkout, err := m.clone(ctx, src, "")
+	cloneCtx, cancelClone := context.WithTimeout(ctx, m.cloneTimeout)
+	checkout, err := m.clone(cloneCtx, src, "")
+	// ctx.Err() == nil: the deadline is the clone's own, not a cancel from above.
+	deadlineHit := errors.Is(cloneCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+	cancelClone()
 	if err != nil {
-		buildErr = fmt.Errorf("%w: %w", errClone, err)
+		buildErr = classifyCloneError(err, deadlineHit)
 		return
 	}
 	defer checkout.Remove()
@@ -301,13 +334,28 @@ func (m *Manager) run(ctx context.Context, deployID string) {
 			"bult.deploy_id":                    deployID,
 		},
 	}
-	if err := m.builder.BuildImage(ctx, rc, opts, logFile); err != nil {
+	buildCtx, cancelBuild := context.WithTimeout(ctx, m.buildTimeout)
+	defer cancelBuild()
+	// timedOut tells the build's own deadline from a cancel from above.
+	timedOut := func() bool {
+		return errors.Is(buildCtx.Err(), context.DeadlineExceeded) && ctx.Err() == nil
+	}
+
+	if err := m.builder.BuildImage(buildCtx, rc, opts, logFile); err != nil {
+		if timedOut() {
+			buildErr = &buildTimeoutError{after: m.buildTimeout, err: err}
+			return
+		}
 		buildErr = fmt.Errorf("%w: %w", errBuild, err)
 		return
 	}
 
-	digest, err := m.builder.PushImage(ctx, tag)
+	digest, err := m.builder.PushImage(buildCtx, tag)
 	if err != nil {
+		if timedOut() {
+			buildErr = &buildTimeoutError{after: m.buildTimeout, err: err}
+			return
+		}
 		buildErr = fmt.Errorf("push image: %w", err)
 		return
 	}
@@ -352,8 +400,21 @@ func userError(err error) string {
 		return err.Error()
 	}
 
-	if errors.Is(err, errClone) {
+	if errors.Is(err, errCloneTimeout) {
+		return "clone timed out (network problem?)"
+	}
+
+	if errors.Is(err, errCloneNotFound) {
 		return "repository not found or private (only public https repositories are supported)"
+	}
+
+	if errors.Is(err, errCloneNetwork) {
+		return "network error while cloning"
+	}
+
+	var timeoutErr *buildTimeoutError
+	if errors.As(err, &timeoutErr) {
+		return timeoutErr.Error()
 	}
 
 	if errors.Is(err, errBuild) {

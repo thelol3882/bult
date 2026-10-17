@@ -32,6 +32,9 @@ type config struct {
 	role     string
 	registry string
 	dataDir  string
+
+	cloneTimeout time.Duration
+	buildTimeout time.Duration
 }
 
 func main() {
@@ -44,6 +47,8 @@ func main() {
 	flag.StringVar(&cfg.role, "role", "runner", "agent role: runner, builder, or both")
 	flag.StringVar(&cfg.registry, "registry", "", "container registry host (required for builder role)")
 	flag.StringVar(&cfg.dataDir, "data-dir", "/var/lib/bult", "directory for persistent data")
+	flag.DurationVar(&cfg.cloneTimeout, "clone-timeout", build.DefaultCloneTimeout, "deadline for cloning a repository")
+	flag.DurationVar(&cfg.buildTimeout, "build-timeout", build.DefaultBuildTimeout, "deadline for building and pushing an image")
 	showVersion := flag.Bool("version", false, "print version and exit 0")
 
 	flag.Parse()
@@ -62,6 +67,11 @@ func main() {
 
 	if (cfg.role == "builder" || cfg.role == "both") && cfg.registry == "" {
 		slog.Error("--registry is required when role is builder or both")
+		os.Exit(2)
+	}
+
+	if cfg.cloneTimeout <= 0 || cfg.buildTimeout <= 0 {
+		slog.Error("--clone-timeout and --build-timeout must be positive")
 		os.Exit(2)
 	}
 
@@ -123,6 +133,8 @@ func run(cfg config) error {
 			return fmt.Errorf("init build store: %w", err)
 		}
 		mgr = build.NewManager(context.Background(), store, dc, cfg.registry)
+
+		mgr.SetTimeouts(cfg.cloneTimeout, cfg.buildTimeout)
 
 		if _, err := mgr.Recover(); err != nil {
 			return fmt.Errorf("recover abandoned jobs: %w", err)

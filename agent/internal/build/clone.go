@@ -2,6 +2,7 @@ package build
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -78,6 +79,7 @@ func runGit(ctx context.Context, dir string, args ...string) (string, error) {
 	cmd := exec.CommandContext(ctx, "git", args...)
 	cmd.Dir = dir
 	cmd.Env = append(os.Environ(), gitEnv()...)
+	ownProcessGroup(cmd)
 
 	out, err := cmd.CombinedOutput()
 	outStr := strings.TrimSpace(string(out))
@@ -109,4 +111,39 @@ func gitEnv() []string {
 		"GIT_ALLOW_PROTOCOL=https",
 		"GIT_TERMINAL_PROMPT=0",
 	}
+}
+
+var (
+	errCloneTimeout  = errors.New("clone timed out")
+	errCloneNotFound = errors.New("repository not found or private")
+	errCloneNetwork  = errors.New("network error while cloning")
+)
+
+// classifyCloneError sorts a git failure into one of the three user-facing
+// kinds. deadlineHit tells that the clone's own deadline expired (and not a
+// cancellation from above). Anything that is not a git failure (validation,
+// temp dir) is returned unchanged. The raw error stays in the chain for the log.
+func classifyCloneError(err error, deadlineHit bool) error {
+	if err == nil {
+		return nil
+	}
+	if deadlineHit {
+		return fmt.Errorf("%w: %w", errCloneTimeout, err)
+	}
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) {
+		return err
+	}
+	text := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"repository not found",
+		"authentication failed",
+		"could not read username",
+		"terminal prompts disabled",
+	} {
+		if strings.Contains(text, marker) {
+			return fmt.Errorf("%w: %w", errCloneNotFound, err)
+		}
+	}
+	return fmt.Errorf("%w: %w", errCloneNetwork, err)
 }

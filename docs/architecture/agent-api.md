@@ -179,6 +179,26 @@ A code is for the caller's **decision**, the message is for a human. The control
 - **Go:** cancellation arrives via `ctx.Done()`; the context must reach the Docker SDK and `exec.CommandContext`, otherwise work leaks.
 - **Python:** asyncio task cancellation plays the role of a context (`task.cancel()` → `grpc.aio` closes the stream).
 
+## Build deadlines and the git process group
+
+Clone and build are the two steps that wait on the network, so each gets its own `context.WithTimeout`, derived from the job context. The values are `bultd` flags (set them in `BULTD_ARGS`, e.g. in `/etc/bult/bultd.env`):
+
+| Flag | Default | Covers |
+|---|---|---|
+| `--clone-timeout` | `2m` | `git clone` (branch validation included) |
+| `--build-timeout` | `15m` | `docker build` + push |
+
+A deadline is told from a user cancel by checking the parent: the deadline fired and the job context is still alive. Cancel ends the job `CANCELLED`; a deadline ends it `FAILED` with a user-facing text:
+
+| Case | `error` |
+|---|---|
+| clone deadline | `clone timed out (network problem?)` |
+| git says repository not found / authentication required | `repository not found or private (only public https repositories are supported)` |
+| any other git failure | `network error while cloning` |
+| build deadline | `build timed out after 15m0s` |
+
+**Why a process group.** Killing only `git clone` is not enough: it spawns `git-remote-https` and `index-pack`, and those inherit the output pipes. The orphans keep the pipes open, `cmd.Wait` never returns, and the job stays `building` forever (reproduced by hand). So every git call runs with `SysProcAttr{Setpgid: true}` (git becomes the leader of a new group), `cmd.Cancel` sends `SIGKILL` to the whole group (`kill(-pid)`), and `cmd.WaitDelay` (2 s) is the last resort: after it `Wait` closes the pipes and returns even if something survived. The group handling is in `procgroup_unix.go`; other platforms fall back to `WaitDelay` only.
+
 ## Deadlines
 
 Rule: **every call from the control plane has a deadline**, and it is longer than the operation itself. In `grpc.aio`, a call without `timeout=` can hang forever.
