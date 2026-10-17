@@ -29,6 +29,17 @@ export const deploysApi = baseApi.injectEndpoints({
                 deployListTag(name),
             ],
         }),
+        cancelDeploy: build.mutation<Deploy, DeployArgs>({
+            query: ({ name, id }) => ({
+                url: `/apps/${encodeURIComponent(name)}/deploys/${encodeURIComponent(id)}/cancel`,
+                method: 'POST',
+            }),
+            // The deploy itself too: a building one is finished by the worker a moment later.
+            invalidatesTags: (_result, _error, { name, id }) => [
+                { type: 'Deploy', id },
+                deployListTag(name),
+            ],
+        }),
         rollbackDeploy: build.mutation<Deploy, DeployArgs>({
             query: ({ name, id }) => ({
                 url: `/apps/${encodeURIComponent(name)}/deploys/${encodeURIComponent(id)}/rollback`,
@@ -70,6 +81,7 @@ export const {
     useStartDeployMutation,
     useStopAppMutation,
     useStartAppMutation,
+    useCancelDeployMutation,
     useRollbackDeployMutation,
     useGetLogsQuery,
     useGetDeployQuery,

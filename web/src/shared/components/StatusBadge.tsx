@@ -9,6 +9,7 @@ const LABEL: Record<DeployStatus, string> = {
     starting: 'Starting',
     running: 'Running',
     failed: 'Failed',
+    cancelled: 'Cancelled',
     superseded: 'Replaced',
     stopped: 'Stopped',
 };

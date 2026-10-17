@@ -3,6 +3,7 @@ export { DeployHistory } from './components/DeployHistory';
 export { LogsPanel } from './components/LogsPanel';
 export { useDeployHistory } from './hooks/useDeployHistory';
 export { useDeployPolling } from './hooks/useDeployPolling';
+export { useCancelDeploy } from './hooks/useCancelDeploy';
 export { useRollback } from './hooks/useRollback';
 export { useStartApp } from './hooks/useStartApp';
 export { useStartDeploy } from './hooks/useStartDeploy';

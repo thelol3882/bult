@@ -27,6 +27,7 @@ import {
     LogsPanel,
     useDeployHistory,
     useDeployPolling,
+    useCancelDeploy,
     useRollback,
     useStartApp,
     useStartDeploy,
@@ -58,6 +59,7 @@ export function AppDetailWidget({ name }: { name: string }) {
     const [editOpened, editHandlers] = useDisclosure(false);
     const confirmDelete = useDeleteApp(() => router.push('/apps'));
     const confirmRollback = useRollback((id) => void setDeployId(id));
+    const confirmCancel = useCancelDeploy();
 
     const handleDeploy = async () => {
         const id = await deploy(name);
@@ -199,6 +201,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                                 error={polling.error}
                                 isLoading={polling.isLoading || history.isLoading}
                                 appUrl={app.url}
+                                onCancel={confirmCancel}
                             />
                         ) : (
                             <EmptyState
@@ -219,6 +222,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                                 onRetry={history.refetch}
                                 onRollback={confirmRollback}
                                 rollbackDisabled={deployInProgress}
+                                onCancel={confirmCancel}
                             />
                         </div>
                     </div>

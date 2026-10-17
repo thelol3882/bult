@@ -1,5 +1,6 @@
 import { Alert, Button, Card, Loader } from '@mantine/core';
-import { IconAlertCircle, IconArrowBackUp, IconHistory } from '@tabler/icons-react';
+import { IconAlertCircle, IconArrowBackUp, IconHistory, IconPlayerStop } from '@tabler/icons-react';
+import { isDeployCancellable } from '@/shared/types';
 import type { ApiError } from '@/shared/api';
 import { Mono, StatusBadge } from '@/shared/components';
 import { shortSha } from '@/shared/utils/digest';
@@ -20,6 +21,8 @@ interface DeployHistoryProps {
     /** Asks to run this deploy's image again; shown on deploys that can be restored. */
     onRollback?: (deploy: Deploy) => void;
     rollbackDisabled?: boolean;
+    /** Asks to cancel a queued or building deploy. */
+    onCancel?: (deploy: Deploy) => void;
 }
 
 export function DeployHistory({
@@ -34,6 +37,7 @@ export function DeployHistory({
     onRetry,
     onRollback,
     rollbackDisabled,
+    onCancel,
 }: DeployHistoryProps) {
     return (
         <Card padding={0}>
@@ -93,6 +97,18 @@ export function DeployHistory({
                                     </span>
                                 )}
                             </button>
+                            {onCancel && isDeployCancellable(d.status) && (
+                                <Button
+                                    variant="subtle"
+                                    color="red"
+                                    size="compact-sm"
+                                    className={classes.action}
+                                    leftSection={<IconPlayerStop size={14} />}
+                                    onClick={() => onCancel(d)}
+                                >
+                                    Cancel
+                                </Button>
+                            )}
                             {onRollback && d.restorable && d.status !== 'running' && (
                                 <Button
                                     variant="subtle"

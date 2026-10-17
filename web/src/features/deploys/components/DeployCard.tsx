@@ -1,6 +1,12 @@
 import type { ReactNode } from 'react';
 import { Alert, Button, Card, Loader } from '@mantine/core';
-import { IconAlertCircle, IconCloudUpload, IconExternalLink } from '@tabler/icons-react';
+import {
+    IconAlertCircle,
+    IconCloudUpload,
+    IconExternalLink,
+    IconPlayerStop,
+} from '@tabler/icons-react';
+import { isDeployCancellable } from '@/shared/types';
 import type { ApiError } from '@/shared/api';
 import { IdText, Mono, StatusBadge } from '@/shared/components';
 import { shortDigest, shortSha } from '@/shared/utils/digest';
@@ -13,9 +19,11 @@ interface DeployCardProps {
     isLoading: boolean;
     /** The app's public URL as returned by the API; the open button shows only when running. */
     appUrl?: string;
+    /** Asks to cancel the deploy; the button shows while it is queued or building. */
+    onCancel?: (deploy: Deploy) => void;
 }
 
-export function DeployCard({ deploy, error, isLoading, appUrl }: DeployCardProps) {
+export function DeployCard({ deploy, error, isLoading, appUrl, onCancel }: DeployCardProps) {
     return (
         <Card padding={0}>
             <div className={classes.head}>
@@ -84,6 +92,18 @@ export function DeployCard({ deploy, error, isLoading, appUrl }: DeployCardProps
                                 Open app
                             </Button>
                             <Mono>{appUrl}</Mono>
+                        </div>
+                    )}
+                    {onCancel && isDeployCancellable(deploy.status) && (
+                        <div className={classes.open}>
+                            <Button
+                                color="red"
+                                variant="light"
+                                leftSection={<IconPlayerStop size={16} />}
+                                onClick={() => onCancel(deploy)}
+                            >
+                                Cancel deploy
+                            </Button>
                         </div>
                     )}
                     {deploy.status === 'failed' && deploy.error && (
