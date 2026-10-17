@@ -59,6 +59,14 @@ export function DeployCard({ deploy, error, isLoading, appUrl }: DeployCardProps
                                 <Pending />
                             )}
                         </Row>
+                        {deploy.source_deploy_id && (
+                            <Row label="Source">
+                                <span className={classes.muted}>
+                                    image of deploy{' '}
+                                    <Mono>{deploy.source_deploy_id.slice(0, 8)}</Mono>
+                                </span>
+                            </Row>
+                        )}
                         <Row label="Node">{deploy.node || <Pending />}</Row>
                         <Row label="Host port">
                             {deploy.host_port ? <Mono>{deploy.host_port}</Mono> : <Pending />}

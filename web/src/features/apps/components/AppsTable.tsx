@@ -39,6 +39,7 @@ export function AppsTable({ apps, onDeploy, onDelete }: AppsTableProps) {
                                         </Link>
                                         <small className={classes.meta}>
                                             {repoLabel(app.repo_url)} · {app.branch}
+                                            {app.replicas === 0 && ' · stopped'}
                                         </small>
                                     </div>
                                 </div>

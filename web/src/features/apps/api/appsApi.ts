@@ -1,6 +1,6 @@
 import { baseApi } from '@/shared/api';
 import type { Page } from '@/shared/types';
-import type { AppCreate, AppUpdate, BultApp } from '../types';
+import type { AppCreate, AppUpdate, BultApp, EnvMap } from '../types';
 
 export const APPS_PAGE_SIZE = 20;
 
@@ -36,6 +36,14 @@ export const appsApi = baseApi.injectEndpoints({
                 { type: 'App', id: 'LIST' },
             ],
         }),
+        setEnv: build.mutation<BultApp, { name: string; env: EnvMap }>({
+            query: ({ name, env }) => ({
+                url: `/apps/${encodeURIComponent(name)}/env`,
+                method: 'PUT',
+                body: { env },
+            }),
+            invalidatesTags: (_result, _error, { name }) => [{ type: 'App', id: name }],
+        }),
         deleteApp: build.mutation<void, string>({
             query: (name) => ({ url: `/apps/${encodeURIComponent(name)}`, method: 'DELETE' }),
             // List only: invalidating the app's own tag would refetch it (404).
@@ -49,5 +57,6 @@ export const {
     useGetAppQuery,
     useCreateAppMutation,
     useUpdateAppMutation,
+    useSetEnvMutation,
     useDeleteAppMutation,
 } = appsApi;

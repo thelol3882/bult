@@ -26,3 +26,8 @@
 .history {
     grid-column: 1 / -1;
 }
+
+.stack {
+    display: grid;
+    gap: 20px;
+}

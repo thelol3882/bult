@@ -5,4 +5,6 @@ export const deployStatusColor = {
     starting: 'sky',
     running: 'green',
     failed: 'red',
+    superseded: 'gray',
+    stopped: 'orange',
 } as const;

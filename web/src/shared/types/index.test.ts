@@ -9,8 +9,8 @@ describe('deploy status helpers', () => {
         }
     });
 
-    it('treats running and failed as finished', () => {
-        for (const status of ['running', 'failed'] as DeployStatus[]) {
+    it('treats running, failed, superseded and stopped as finished', () => {
+        for (const status of ['running', 'failed', 'superseded', 'stopped'] as DeployStatus[]) {
             expect(isDeployActive(status)).toBe(false);
             expect(isDeployFinished(status)).toBe(true);
         }

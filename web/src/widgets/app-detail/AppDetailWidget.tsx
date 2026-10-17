@@ -1,35 +1,52 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useQueryState } from 'nuqs';
-import { Button, Loader } from '@mantine/core';
+import { parseAsStringLiteral, useQueryState } from 'nuqs';
+import { Button, Loader, Tabs, Tooltip } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import {
     IconCloudUpload,
     IconExternalLink,
     IconPencil,
+    IconPlayerPlay,
+    IconPlayerStop,
     IconRefresh,
     IconTrash,
 } from '@tabler/icons-react';
-import { AppDetailsCard, EditAppModal, useDeleteApp, useGetAppQuery } from '@/features/apps';
+import {
+    AppDetailsCard,
+    EditAppModal,
+    EnvCard,
+    useDeleteApp,
+    useGetAppQuery,
+} from '@/features/apps';
 import { BackendUnavailablePage, ForbiddenPage, NotFoundPage } from '@/features/error';
 import {
     DeployCard,
     DeployHistory,
+    LogsPanel,
     useDeployHistory,
     useDeployPolling,
+    useRollback,
+    useStartApp,
     useStartDeploy,
+    useStopApp,
 } from '@/features/deploys';
 import { normalizeError } from '@/shared/api';
 import { isDeployActive } from '@/shared/types';
 import { EmptyState, Mono, PageHeader } from '@/shared/components';
 import classes from './AppDetailWidget.module.css';
 
+const TABS = ['overview', 'logs'] as const;
+
 export function AppDetailWidget({ name }: { name: string }) {
     const router = useRouter();
     const { data: app, error, isLoading, refetch } = useGetAppQuery(name);
     const [deployId, setDeployId] = useQueryState('deploy');
+    const [tab, setTab] = useQueryState('tab', parseAsStringLiteral(TABS).withDefault('overview'));
     const { deploy, isStarting } = useStartDeploy();
+    const { startApp, isStarting: isRestarting } = useStartApp();
+    const confirmStop = useStopApp();
     const history = useDeployHistory(name);
     // Without ?deploy= show the newest deploy, so the card survives a page refresh.
     const selectedId = deployId ?? history.deploys[0]?.id ?? null;
@@ -40,11 +57,20 @@ export function AppDetailWidget({ name }: { name: string }) {
     const deployInProgress = deploys[0] !== undefined && isDeployActive(deploys[0].status);
     const [editOpened, editHandlers] = useDisclosure(false);
     const confirmDelete = useDeleteApp(() => router.push('/apps'));
+    const confirmRollback = useRollback((id) => void setDeployId(id));
 
     const handleDeploy = async () => {
         const id = await deploy(name);
         if (id) await setDeployId(id);
     };
+
+    const handleStart = async () => {
+        const id = await startApp(name);
+        if (id) await setDeployId(id);
+    };
+
+    // Start needs an image from a deploy that ran; more history pages may still hold one.
+    const hasImageToStart = deploys.some((d) => d.restorable) || history.hasMore;
 
     if (isLoading) {
         return (
@@ -109,6 +135,37 @@ export function AppDetailWidget({ name }: { name: string }) {
                         >
                             Delete
                         </Button>
+                        {app.replicas === 0 ? (
+                            <Tooltip
+                                label="Deploy the app first: there is no image to start."
+                                disabled={history.isLoading || hasImageToStart}
+                            >
+                                <span>
+                                    <Button
+                                        variant="default"
+                                        leftSection={<IconPlayerPlay size={16} />}
+                                        loading={isRestarting}
+                                        disabled={
+                                            deployInProgress ||
+                                            history.isLoading ||
+                                            !hasImageToStart
+                                        }
+                                        onClick={handleStart}
+                                    >
+                                        Start
+                                    </Button>
+                                </span>
+                            </Tooltip>
+                        ) : (
+                            <Button
+                                variant="default"
+                                leftSection={<IconPlayerStop size={16} />}
+                                disabled={deploys[0]?.status !== 'running'}
+                                onClick={() => confirmStop(app.name)}
+                            >
+                                Stop
+                            </Button>
+                        )}
                         <Button
                             leftSection={<IconCloudUpload size={16} />}
                             loading={isStarting}
@@ -120,35 +177,57 @@ export function AppDetailWidget({ name }: { name: string }) {
                     </>
                 }
             />
-            <div className={classes.grid}>
-                <AppDetailsCard app={app} />
-                {selectedId || history.isLoading ? (
-                    <DeployCard
-                        deploy={polling.deploy}
-                        error={polling.error}
-                        isLoading={polling.isLoading || history.isLoading}
-                        appUrl={app.url}
-                    />
-                ) : (
-                    <EmptyState
-                        title="No deploy yet"
-                        description="Press Deploy to build and run this app."
-                    />
-                )}
-                <div className={classes.history}>
-                    <DeployHistory
-                        deploys={deploys}
-                        selectedId={selectedId ?? undefined}
-                        onSelect={(id) => void setDeployId(id)}
-                        isLoading={history.isLoading}
-                        error={history.error}
-                        hasMore={history.hasMore}
-                        isLoadingMore={history.isLoadingMore}
-                        onLoadMore={history.loadMore}
-                        onRetry={history.refetch}
-                    />
-                </div>
-            </div>
+            <Tabs
+                value={tab}
+                onChange={(value) => void setTab(value as (typeof TABS)[number])}
+                keepMounted={false}
+            >
+                <Tabs.List mb="lg">
+                    <Tabs.Tab value="overview">Overview</Tabs.Tab>
+                    <Tabs.Tab value="logs">Logs</Tabs.Tab>
+                </Tabs.List>
+
+                <Tabs.Panel value="overview">
+                    <div className={classes.grid}>
+                        <div className={classes.stack}>
+                            <AppDetailsCard app={app} />
+                            <EnvCard app={app} />
+                        </div>
+                        {selectedId || history.isLoading ? (
+                            <DeployCard
+                                deploy={polling.deploy}
+                                error={polling.error}
+                                isLoading={polling.isLoading || history.isLoading}
+                                appUrl={app.url}
+                            />
+                        ) : (
+                            <EmptyState
+                                title="No deploy yet"
+                                description="Press Deploy to build and run this app."
+                            />
+                        )}
+                        <div className={classes.history}>
+                            <DeployHistory
+                                deploys={deploys}
+                                selectedId={selectedId ?? undefined}
+                                onSelect={(id) => void setDeployId(id)}
+                                isLoading={history.isLoading}
+                                error={history.error}
+                                hasMore={history.hasMore}
+                                isLoadingMore={history.isLoadingMore}
+                                onLoadMore={history.loadMore}
+                                onRetry={history.refetch}
+                                onRollback={confirmRollback}
+                                rollbackDisabled={deployInProgress}
+                            />
+                        </div>
+                    </div>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="logs">
+                    <LogsPanel name={app.name} />
+                </Tabs.Panel>
+            </Tabs>
             <EditAppModal app={app} opened={editOpened} onClose={editHandlers.close} />
         </>
     );

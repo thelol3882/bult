@@ -1,4 +1,5 @@
-export type DeployStatus = 'queued' | 'building' | 'starting' | 'running' | 'failed';
+export type DeployStatus =
+    'queued' | 'building' | 'starting' | 'running' | 'failed' | 'superseded' | 'stopped';
 
 /** A queued, building or starting deploy: work in progress, keep polling it. */
 export const isDeployActive = (status: DeployStatus): boolean =>

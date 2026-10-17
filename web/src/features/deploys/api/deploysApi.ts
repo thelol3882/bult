@@ -1,6 +1,6 @@
 import { baseApi } from '@/shared/api';
 import type { CursorPage } from '@/shared/types';
-import type { Deploy, DeployArgs } from '../types';
+import type { AppLogs, Deploy, DeployArgs } from '../types';
 
 export const HISTORY_PAGE_SIZE = 20;
 
@@ -14,6 +14,33 @@ export const deploysApi = baseApi.injectEndpoints({
                 method: 'POST',
             }),
             invalidatesTags: (_result, _error, name) => [deployListTag(name)],
+        }),
+        stopApp: build.mutation<void, string>({
+            query: (name) => ({ url: `/apps/${encodeURIComponent(name)}/stop`, method: 'POST' }),
+            invalidatesTags: (_result, _error, name) => [
+                { type: 'App', id: name },
+                deployListTag(name),
+            ],
+        }),
+        startApp: build.mutation<Deploy, string>({
+            query: (name) => ({ url: `/apps/${encodeURIComponent(name)}/start`, method: 'POST' }),
+            invalidatesTags: (_result, _error, name) => [
+                { type: 'App', id: name },
+                deployListTag(name),
+            ],
+        }),
+        rollbackDeploy: build.mutation<Deploy, DeployArgs>({
+            query: ({ name, id }) => ({
+                url: `/apps/${encodeURIComponent(name)}/deploys/${encodeURIComponent(id)}/rollback`,
+                method: 'POST',
+            }),
+            invalidatesTags: (_result, _error, { name }) => [
+                { type: 'App', id: name },
+                deployListTag(name),
+            ],
+        }),
+        getLogs: build.query<AppLogs, { name: string; tail: number }>({
+            query: ({ name, tail }) => `/apps/${encodeURIComponent(name)}/logs?tail=${tail}`,
         }),
         getDeployHistory: build.infiniteQuery<CursorPage<Deploy>, string, string | null>({
             infiniteQueryOptions: {
@@ -30,10 +57,21 @@ export const deploysApi = baseApi.injectEndpoints({
         getDeploy: build.query<Deploy, DeployArgs>({
             query: ({ name, id }) =>
                 `/apps/${encodeURIComponent(name)}/deploys/${encodeURIComponent(id)}`,
-            providesTags: (_result, _error, { id }) => [{ type: 'Deploy', id }],
+            // The list tag too: stop, start and rollback change a deploy they do not name.
+            providesTags: (_result, _error, { name, id }) => [
+                { type: 'Deploy', id },
+                deployListTag(name),
+            ],
         }),
     }),
 });
 
-export const { useStartDeployMutation, useGetDeployQuery, useGetDeployHistoryInfiniteQuery } =
-    deploysApi;
+export const {
+    useStartDeployMutation,
+    useStopAppMutation,
+    useStartAppMutation,
+    useRollbackDeployMutation,
+    useGetLogsQuery,
+    useGetDeployQuery,
+    useGetDeployHistoryInfiniteQuery,
+} = deploysApi;

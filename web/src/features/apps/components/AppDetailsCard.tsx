@@ -40,6 +40,13 @@ export function AppDetailsCard({ app }: { app: BultApp }) {
                         <IconExternalLink size={13} />
                     </a>
                 </Row>
+                <Row label="State">
+                    {app.replicas === 0 ? (
+                        <span className={classes.muted}>Stopped</span>
+                    ) : (
+                        <Mono>{app.replicas} replica</Mono>
+                    )}
+                </Row>
                 <Row label="Created">{fromNow(app.created_at)}</Row>
             </dl>
         </Card>

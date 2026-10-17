@@ -8,6 +8,10 @@ export interface BultApp {
     subdir: string;
     created_at: string;
     url: string;
+    /** Desired replicas: 0 = stopped, 1 = running. */
+    replicas: number;
+    /** Names only: the values are write-only. */
+    env_keys: string[];
 }
 
 export interface AppCreate {
@@ -17,6 +21,9 @@ export interface AppCreate {
     branch: string;
     subdir: string;
 }
+
+/** Variable name -> value. The API never returns values. */
+export type EnvMap = Record<string, string>;
 
 /** Partial update: only changed fields are sent; the name is immutable. */
 export type AppUpdate = Partial<Omit<AppCreate, 'name'>>;

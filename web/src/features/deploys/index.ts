@@ -1,6 +1,10 @@
 export { DeployCard } from './components/DeployCard';
 export { DeployHistory } from './components/DeployHistory';
+export { LogsPanel } from './components/LogsPanel';
 export { useDeployHistory } from './hooks/useDeployHistory';
 export { useDeployPolling } from './hooks/useDeployPolling';
+export { useRollback } from './hooks/useRollback';
+export { useStartApp } from './hooks/useStartApp';
 export { useStartDeploy } from './hooks/useStartDeploy';
+export { useStopApp } from './hooks/useStopApp';
 export type { Deploy } from './types';

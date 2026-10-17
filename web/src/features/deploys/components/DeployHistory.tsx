@@ -1,5 +1,5 @@
 import { Alert, Button, Card, Loader } from '@mantine/core';
-import { IconAlertCircle, IconHistory } from '@tabler/icons-react';
+import { IconAlertCircle, IconArrowBackUp, IconHistory } from '@tabler/icons-react';
 import type { ApiError } from '@/shared/api';
 import { Mono, StatusBadge } from '@/shared/components';
 import { shortSha } from '@/shared/utils/digest';
@@ -17,6 +17,9 @@ interface DeployHistoryProps {
     isLoadingMore: boolean;
     onLoadMore: () => void;
     onRetry: () => void;
+    /** Asks to run this deploy's image again; shown on deploys that can be restored. */
+    onRollback?: (deploy: Deploy) => void;
+    rollbackDisabled?: boolean;
 }
 
 export function DeployHistory({
@@ -29,6 +32,8 @@ export function DeployHistory({
     isLoadingMore,
     onLoadMore,
     onRetry,
+    onRollback,
+    rollbackDisabled,
 }: DeployHistoryProps) {
     return (
         <Card padding={0}>
@@ -65,7 +70,7 @@ export function DeployHistory({
             {deploys.length > 0 && (
                 <ul className={classes.list}>
                     {deploys.map((d) => (
-                        <li key={d.id}>
+                        <li key={d.id} className={classes.row}>
                             <button
                                 type="button"
                                 className={classes.item}
@@ -88,6 +93,18 @@ export function DeployHistory({
                                     </span>
                                 )}
                             </button>
+                            {onRollback && d.restorable && d.status !== 'running' && (
+                                <Button
+                                    variant="subtle"
+                                    size="compact-sm"
+                                    className={classes.action}
+                                    leftSection={<IconArrowBackUp size={14} />}
+                                    disabled={rollbackDisabled}
+                                    onClick={() => onRollback(d)}
+                                >
+                                    Roll back
+                                </Button>
+                            )}
                         </li>
                     ))}
                 </ul>

@@ -9,6 +9,8 @@ const LABEL: Record<DeployStatus, string> = {
     starting: 'Starting',
     running: 'Running',
     failed: 'Failed',
+    superseded: 'Replaced',
+    stopped: 'Stopped',
 };
 
 export function StatusBadge({ status }: { status: DeployStatus }) {

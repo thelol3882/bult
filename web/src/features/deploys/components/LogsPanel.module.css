@@ -1,0 +1,55 @@
+.head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--slate-2);
+}
+
+.head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.spacer {
+    flex: 1;
+}
+
+.muted {
+    color: var(--slate-6);
+    font-size: 13px;
+}
+
+.state {
+    display: grid;
+    place-items: center;
+    padding: 32px;
+}
+
+.pad {
+    padding: 16px 20px;
+}
+
+.empty {
+    margin: 0;
+    padding: 28px 20px;
+    color: var(--slate-6);
+    font-size: 13px;
+    text-align: center;
+}
+
+.viewport {
+    box-sizing: border-box;
+    max-height: 520px;
+    margin: 0;
+    padding: 14px 20px;
+    overflow: auto;
+    background: var(--night-8);
+    color: var(--night-0);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre;
+    border-radius: 0 0 var(--mantine-radius-default, 8px) var(--mantine-radius-default, 8px);
+}
