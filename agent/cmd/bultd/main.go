@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -14,6 +15,7 @@ import (
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
 	"github.com/thelol3882/bult/agent/internal/build"
 	"github.com/thelol3882/bult/agent/internal/docker"
+	"github.com/thelol3882/bult/agent/internal/heartbeat"
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
 	"google.golang.org/grpc"
@@ -23,7 +25,13 @@ import (
 
 var version = "dev"
 
-const shutdownTimeout = 10 * time.Second
+const (
+	shutdownTimeout = 10 * time.Second
+
+	// nodeTokenEnv holds the node's secret; it is read from the environment so it
+	// never shows up in the process list.
+	nodeTokenEnv = "BULTD_NODE_TOKEN"
+)
 
 type config struct {
 	addr     string
@@ -32,6 +40,11 @@ type config struct {
 	role     string
 	registry string
 	dataDir  string
+
+	controlPlaneURL string
+	nodeName        string
+	advertiseAddr   string
+	nodeToken       string
 
 	cloneTimeout time.Duration
 	buildTimeout time.Duration
@@ -49,6 +62,9 @@ func main() {
 	flag.StringVar(&cfg.dataDir, "data-dir", "/var/lib/bult", "directory for persistent data")
 	flag.DurationVar(&cfg.cloneTimeout, "clone-timeout", build.DefaultCloneTimeout, "deadline for cloning a repository")
 	flag.DurationVar(&cfg.buildTimeout, "build-timeout", build.DefaultBuildTimeout, "deadline for building and pushing an image")
+	flag.StringVar(&cfg.controlPlaneURL, "control-plane-url", "", "control plane base URL for heartbeats (empty disables them)")
+	flag.StringVar(&cfg.nodeName, "node-name", "", "node name in the control plane (default: hostname)")
+	flag.StringVar(&cfg.advertiseAddr, "advertise-addr", "", "gRPC host:port the control plane should dial (required with --control-plane-url)")
 	showVersion := flag.Bool("version", false, "print version and exit 0")
 
 	flag.Parse()
@@ -72,6 +88,12 @@ func main() {
 
 	if cfg.cloneTimeout <= 0 || cfg.buildTimeout <= 0 {
 		slog.Error("--clone-timeout and --build-timeout must be positive")
+		os.Exit(2)
+	}
+
+	cfg.nodeToken = os.Getenv(nodeTokenEnv)
+	if cfg.controlPlaneURL != "" && cfg.advertiseAddr == "" {
+		slog.Error("--advertise-addr is required with --control-plane-url")
 		os.Exit(2)
 	}
 
@@ -157,6 +179,9 @@ func run(cfg config) error {
 		serveErr <- grpcServer.Serve(lis)
 	}()
 
+	// ctx is cancelled by the signal, which also stops the heartbeat loop.
+	heartbeatDone := startHeartbeat(ctx, cfg, hostname)
+
 	select {
 	case err := <-serveErr:
 		return fmt.Errorf("serve: %w", err)
@@ -166,6 +191,8 @@ func run(cfg config) error {
 
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), shutdownTimeout)
 	defer cancelShutdown()
+
+	<-heartbeatDone
 
 	if mgr != nil {
 		if err := mgr.Shutdown(shutdownCtx); err != nil {
@@ -191,6 +218,39 @@ func run(cfg config) error {
 
 	slog.Info("stopped")
 	return nil
+}
+
+// startHeartbeat starts the heartbeat loop and returns a channel that is closed
+// when the loop has stopped (at once if heartbeats are disabled).
+func startHeartbeat(ctx context.Context, cfg config, hostname string) <-chan struct{} {
+	done := make(chan struct{})
+
+	if cfg.controlPlaneURL == "" || cfg.nodeToken == "" {
+		slog.Info("heartbeat disabled: set --control-plane-url and " + nodeTokenEnv + " to register this node")
+		close(done)
+		return done
+	}
+
+	name := cfg.nodeName
+	if name == "" {
+		name = hostname
+	}
+	hb := heartbeat.Config{
+		URL:      cfg.controlPlaneURL,
+		Token:    cfg.nodeToken,
+		Name:     name,
+		Address:  cfg.advertiseAddr,
+		Role:     cfg.role,
+		Version:  version,
+		Capacity: heartbeat.DetectCapacity(),
+	}
+	slog.Info("heartbeat enabled", "control_plane", cfg.controlPlaneURL, "node", name, "advertise", cfg.advertiseAddr)
+
+	go func() {
+		defer close(done)
+		heartbeat.Run(ctx, hb, &http.Client{Timeout: heartbeat.DefaultTimeout})
+	}()
+	return done
 }
 
 // setupLogging makes slog the process logger. Under systemd the journal

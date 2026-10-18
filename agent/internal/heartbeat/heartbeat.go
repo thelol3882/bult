@@ -1,0 +1,132 @@
+// Package heartbeat tells the control plane that this node is alive: it
+// registers the node on the first beat and refreshes it every interval.
+package heartbeat
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"net/http"
+	"strings"
+	"time"
+)
+
+const (
+	// DefaultInterval is how often a beat is sent.
+	DefaultInterval = 5 * time.Second
+	// DefaultTimeout bounds one request, so a hung control plane cannot stall the loop.
+	DefaultTimeout = 3 * time.Second
+
+	// A failing control plane is reported on the first failure and then once per
+	// this many consecutive failures, so a long outage does not flood the journal.
+	logEveryFailures = 12
+
+	endpoint = "/internal/nodes/heartbeat"
+)
+
+// Capacity is what the node offers to the scheduler.
+type Capacity struct {
+	CPUs        int   `json:"cpus"`
+	MemoryBytes int64 `json:"memory_bytes"`
+}
+
+// Config describes the node and where to report it.
+type Config struct {
+	URL      string // control plane base URL, e.g. http://192.168.252.1:8000
+	Token    string // node token; sent as a bearer token, never logged
+	Name     string
+	Address  string // gRPC address the control plane should dial
+	Role     string
+	Version  string
+	Capacity Capacity
+	Interval time.Duration // zero means DefaultInterval
+}
+
+type payload struct {
+	Name     string   `json:"name"`
+	Address  string   `json:"address"`
+	Role     string   `json:"role"`
+	Version  string   `json:"version"`
+	Capacity Capacity `json:"capacity"`
+}
+
+// Run sends a beat immediately and then one per interval until ctx is
+// cancelled. client carries its own timeout; a nil client gets a default one.
+func Run(ctx context.Context, cfg Config, client *http.Client) {
+	if client == nil {
+		client = &http.Client{Timeout: DefaultTimeout}
+	}
+	interval := cfg.Interval
+	if interval <= 0 {
+		interval = DefaultInterval
+	}
+
+	body, err := json.Marshal(payload{
+		Name:     cfg.Name,
+		Address:  cfg.Address,
+		Role:     cfg.Role,
+		Version:  cfg.Version,
+		Capacity: cfg.Capacity,
+	})
+	if err != nil {
+		// A struct of strings and numbers cannot fail to marshal; log in case that changes.
+		slog.Error("heartbeat disabled: cannot encode payload", "err", err)
+		return
+	}
+	url := strings.TrimRight(cfg.URL, "/") + endpoint
+
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+
+	failures := 0
+	for {
+		err := beat(ctx, client, url, cfg.Token, body)
+		switch {
+		case ctx.Err() != nil:
+			return
+		case err != nil:
+			failures++
+			if failures%logEveryFailures == 1 {
+				slog.Warn("heartbeat failed", "err", err, "consecutive_failures", failures)
+			}
+		default:
+			if failures > 0 {
+				slog.Info("heartbeat restored", "after_failures", failures)
+			}
+			failures = 0
+		}
+
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+		}
+	}
+}
+
+// beat sends one heartbeat. The token only goes into the header, so it cannot
+// leak through an error message.
+func beat(ctx context.Context, client *http.Client, url, token string, body []byte) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("build request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return fmt.Errorf("send: %w", err)
+	}
+	defer resp.Body.Close()
+	// Drain a little so the connection can be reused; the body itself is not needed.
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("control plane answered %s", resp.Status)
+	}
+	return nil
+}

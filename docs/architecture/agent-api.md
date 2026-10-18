@@ -220,6 +220,15 @@ A deadline answers "how long to wait for the result"; keepalive answers "is the 
 
 **Keepalive must be allowed by the server.** grpc-go's default `EnforcementPolicy` is `MinTime: 5m, PermitWithoutStream: false`: a client pinging more often (the control plane pings every 30 s, also with no call in flight) collects strikes and is dropped with `GOAWAY ENHANCE_YOUR_CALM "too_many_pings"` after ~90 s — an in-flight `RunReplica` would end as `UNAVAILABLE` while the replica still starts. The agent therefore sets `MinTime: 20s, PermitWithoutStream: true` (below the client interval) and its own server pings. Fixing it on the client (pinging every 5+ minutes) would delay dead-node detection by the same 5 minutes. Verified 2026-10-10: GOAWAY at 90 s before, channel `READY` for 3 min after.
 
+## Node registration (heartbeat)
+
+Registration is not a gRPC call: the agent is a client of the control plane's HTTP API here, the one place the dependency points that way (full design in `nodes.md`). Every 5 s, starting at once, `bultd` posts `{name, address, role, version, capacity: {cpus, memory_bytes}}` to `<--control-plane-url>/internal/nodes/heartbeat` with `Authorization: Bearer $BULTD_NODE_TOKEN`.
+
+- Flags: `--control-plane-url`, `--node-name` (default: the hostname), `--advertise-addr` (the gRPC `host:port` the control plane should dial; required with the URL). The token comes from the environment, never a flag, so it is not in the process list or the logs.
+- Heartbeats are off, with one log line, unless both the URL and the token are set; the agent starts as before.
+- The HTTP client has its own 3 s timeout so a hung control plane cannot stall the loop; the request context is the agent's run context, so shutdown aborts an in-flight beat and the loop ends before the agent exits. Failures are logged on the first miss and then every 12th (about a minute), and "restored" is logged once.
+- A heartbeat that stops is how the control plane notices a dead node (`unhealthy` after ~15 s); there is no deregistration call.
+
 ## Costs and limitations
 
 - The agent is stateful: a job registry, files on disk, and their cleanup.
