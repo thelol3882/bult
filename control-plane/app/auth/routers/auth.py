@@ -1,8 +1,7 @@
 """Auth resource: register, login, me."""
 
-from typing import Annotated
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, status
 
 from app.auth.deps import AuthServiceDep, CurrentUser, TokenTTLDep
 from app.auth.schemas.auth import LoginIn, RegisterIn, TokenOut, UserOut

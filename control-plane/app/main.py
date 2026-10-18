@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from app import health
 from app.agents.client import AgentClients
 from app.apps.events import AppDeleted
-from app.apps.public import build_apps_facade
+from app.apps.public import AppsFacade, build_apps_facade
 from app.apps.routers import apps as apps_router
 from app.apps.uow import sql_apps_uow_factory
 from app.auth.routers import auth as auth_router
@@ -34,6 +34,12 @@ from app.deploys.services.reconcile import (
 from app.deploys.services.worker import DeployWorker
 from app.deploys.uow import sql_deploys_uow_factory
 from app.ingress.routes import RouteWriter
+from app.nodes.routers import internal as nodes_internal_router
+from app.nodes.routers import nodes as nodes_router
+from app.nodes.services.facade import NodesFacade
+from app.nodes.services.monitor import NodeMonitor
+from app.nodes.services.nodes import NodeService
+from app.nodes.uow import sql_nodes_uow_factory
 
 logger = logging.getLogger(__name__)
 
@@ -44,12 +50,16 @@ async def lifespan(app: FastAPI):
     settings = Settings()  # pyright: ignore[reportCallIssue]
     app.state.settings = settings
 
-    app.state.agents = AgentClients(settings.builder, settings.runners)
-    app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
-
     engine = create_engine(settings.database_url)
     session_factory = create_session_factory(engine)
     app.state.db_engine = engine
+
+    app.state.nodes_uow_factory = sql_nodes_uow_factory(session_factory)
+    app.state.node_service = NodeService(app.state.nodes_uow_factory, settings)
+    app.state.nodes = NodesFacade(app.state.node_service)
+
+    app.state.agents = AgentClients(app.state.nodes)
+    app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
 
     app.state.apps_uow_factory = sql_apps_uow_factory(session_factory)
 
@@ -71,23 +81,51 @@ async def lifespan(app: FastAPI):
         app.state.agents,
         app.state.deploys_uow_factory,
         apps_facade,
+        app.state.nodes,
         app.state.routes,
-        settings.runners,
         settings.trusted_proxy,
+    )
+    monitor = NodeMonitor(
+        app.state.node_service,
+        on_change=lambda: _reapply_routes(app, apps_facade),
+        interval=settings.node_monitor_interval,
+        initial_delay=settings.node_ttl_seconds,
     )
     startup_check: asyncio.Task[None] | None = None
     if settings.deploy_worker:
         worker.start()
         startup_check = asyncio.create_task(_startup_check(app))
+    if settings.node_monitor:
+        monitor.start()
 
     yield
 
+    await monitor.stop()
     if startup_check is not None:
         startup_check.cancel()
         await asyncio.gather(startup_check, return_exceptions=True)
     await worker.stop()
     await app.state.agents.close()
     await app.state.db_engine.dispose()
+
+
+async def _reapply_routes(app: FastAPI, apps: AppsFacade) -> None:
+    """A node became unhealthy or came back: the routes follow."""
+    state = app.state
+    service = build_deploy_service(
+        state.deploys_uow_factory,
+        apps,
+        state.agents,
+        state.nodes,
+        state.routes,
+        state.settings,
+    )
+    _ = await service.reapply_routes("node status change")
+
+
+async def _replica_counts(app: FastAPI) -> dict[str, int]:
+    async with app.state.deploys_uow_factory() as uow:
+        return await uow.replicas.count_running_by_node()
 
 
 async def _startup_check(app: FastAPI) -> None:
@@ -107,7 +145,7 @@ async def _startup_check(app: FastAPI) -> None:
             state.agents,
             state.deploys_uow_factory,
             state.routes,
-            state.settings.runners,
+            state.nodes,
             apps,
         )
         removed = await remove_orphan_replicas(
@@ -137,6 +175,7 @@ def _build_event_bus(app: FastAPI) -> EventBus:
                 events=bus.collector(),
             ),
             state.agents,
+            state.nodes,
             state.routes,
             state.settings,
         )
@@ -156,12 +195,15 @@ def create_app() -> FastAPI:
     )
 
     app.state.event_bus = _build_event_bus(app)
+    app.state.replica_counts = lambda: _replica_counts(app)
 
     app.add_middleware(TraceIdMiddleware)
     exception_handlers.register(app)
 
     app.include_router(health.router)
     app.include_router(auth_router.router)
+    app.include_router(nodes_router.router)
+    app.include_router(nodes_internal_router.router)
     app.include_router(apps_router.router)
     app.include_router(deploys_router.router)
     app.include_router(lifecycle_router.router)

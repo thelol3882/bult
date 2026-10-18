@@ -11,8 +11,16 @@ from pydantic import Field, SecretStr, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
+MIN_NODE_TOKEN_LENGTH = 32
+MAX_REPLICAS = 5  # per app
+
+
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="BULT_", populate_by_name=True)
+    model_config = SettingsConfigDict(
+        env_prefix="BULT_",
+        populate_by_name=True,
+        hide_input_in_errors=True,  # a validation error must not echo secrets
+    )
 
     builder: str  # BULT_BUILDER, e.g. "192.168.252.8:50051"
     # BULT_RUNNERS: "bult-node-1=192.168.252.6:50051,bult-node-2=…" (or a JSON object).
@@ -28,6 +36,43 @@ class Settings(BaseSettings):
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_ttl_seconds: int = 86400
     deploy_worker: bool = True  # BULT_DEPLOY_WORKER=false: no background worker (API-only tests)
+    # BULT_NODE_TOKENS: "bult-node-1=<token>,bult-builder=<token>" (or a JSON object); a node
+    # may only report itself under the name its token is bound to.
+    node_tokens: Annotated[dict[str, SecretStr], NoDecode] = Field(default_factory=dict)
+    node_ttl_seconds: float = Field(default=15.0, gt=0)  # silent for longer -> unhealthy
+    node_monitor: bool = True  # BULT_NODE_MONITOR=false: no status monitor (API-only tests)
+    node_monitor_interval: float = Field(default=3.0, gt=0)
+
+    @field_validator("node_tokens", mode="before")
+    @classmethod
+    def _parse_node_tokens(cls, value: Any) -> Any:
+        """Accept 'name=token,name=token' or a JSON object; tokens are at least 32 characters.
+
+        Messages name the node, never the token.
+        """
+        if not isinstance(value, str):
+            return value
+
+        raw = value.strip()
+        pairs: dict[str, str] = {}
+        if raw.startswith("{"):
+            pairs = json.loads(raw)
+        else:
+            for entry in raw.split(","):
+                entry = entry.strip()
+                if not entry:
+                    continue
+                name, sep, token = entry.partition("=")
+                if not sep or not name.strip() or not token.strip():
+                    raise ValueError("invalid node token entry, expected 'name=token'")
+                pairs[name.strip()] = token.strip()
+
+        for name, token in pairs.items():
+            if not isinstance(token, str) or len(token) < MIN_NODE_TOKEN_LENGTH:
+                raise ValueError(
+                    f"token of node '{name}' is shorter than {MIN_NODE_TOKEN_LENGTH} characters"
+                )
+        return pairs
 
     @field_validator("runners", mode="before")
     @classmethod

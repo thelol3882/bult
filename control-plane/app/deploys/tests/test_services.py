@@ -8,7 +8,7 @@ import pytest
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.runner import MAX_POLL_FAILURES
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route, RouteApplyError
+from app.ingress.routes import RouteApplyError
 from tests.fakes import (
     BUILD_ERROR,
     COMMIT_SHA,
@@ -19,6 +19,7 @@ from tests.fakes import (
     FakeApps,
     FakeRoutes,
     make_worker,
+    one_route,
     rpc_error,
     run_deploys,
 )
@@ -48,8 +49,9 @@ def test_deploy_success(routes: FakeRoutes):
 
     deploy = _get(uow, "d1")
     assert deploy.status == "running"
-    assert deploy.node == "node-a"
-    assert deploy.host_port == HOST_PORT
+    assert deploy.ran
+    [replica] = asyncio.run(uow.replicas.list_running(["d1"]))
+    assert (replica.id, replica.node, replica.host_port) == ("d1-r0", "node-a", HOST_PORT)
     assert deploy.commit_sha == COMMIT_SHA
     assert deploy.image == f"{IMAGE_REPOSITORY}@{IMAGE_DIGEST}"
     assert deploy.error == ""
@@ -65,7 +67,7 @@ def test_deploy_success(routes: FakeRoutes):
     assert call["env"] == {"PORT": "8000", "FORWARDED_ALLOW_IPS": "10.0.0.1"}
 
     # The route points at the node's IP (from RUNNERS), not at the node's name.
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", HOST_PORT)]
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", HOST_PORT)]
 
 
 def test_build_failed(routes: FakeRoutes):

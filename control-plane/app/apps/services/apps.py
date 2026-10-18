@@ -7,7 +7,7 @@ from app.apps.events import AppDeleted
 from app.apps.repositories.apps import App
 from app.apps.schemas.apps import AppCreate, AppUpdate, EnvUpdate
 from app.apps.uow import AppsUoW
-from app.core.config import Settings
+from app.core.config import MAX_REPLICAS, Settings
 from app.core.events import EventPublisher
 from app.core.pagination import PageParams
 from app.core.principal import Principal
@@ -75,7 +75,9 @@ class AppService:
         return await self._change(name, principal, env=data.env)
 
     async def set_replicas(self, name: str, replicas: int, principal: Principal) -> App:
-        """Desired number of replicas (0 = stopped, 1 = running)."""
+        """Desired number of replicas (0 = stopped, 1..MAX_REPLICAS = running)."""
+        if not 0 <= replicas <= MAX_REPLICAS:
+            raise ValueError(f"replicas must be 0..{MAX_REPLICAS}, got {replicas}")
         return await self._change(name, principal, replicas=replicas)
 
     async def stopped_names(self) -> list[str]:

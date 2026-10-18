@@ -4,7 +4,8 @@ import asyncio
 import json
 import os
 import shutil
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
+from collections.abc import Set as AbstractSet
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,12 +21,19 @@ def node_ip(runner_address: str) -> str:
 
 
 @dataclass(frozen=True)
-class Route:
-    """One app at <name>.<domain> via one replica."""
+class Upstream:
+    """One replica as nginx reaches it."""
 
-    name: str  # DNS label validated by Pydantic: safe inside nginx config
     node_ip: str
     host_port: int
+
+
+@dataclass(frozen=True)
+class Route:
+    """One app at <name>.<domain>, balanced over its replicas (nginx's default round-robin)."""
+
+    name: str  # DNS label validated by Pydantic: safe inside nginx config
+    upstreams: tuple[Upstream, ...]
 
 
 class RouteApplyError(Exception):
@@ -47,9 +55,12 @@ server {{
 }}
 """
     for r in routes:
+        servers = "\n".join(
+            f"    server {u.node_ip}:{u.host_port};" for u in r.upstreams
+        )
         files[f"{r.name}.conf"] = f"""\
 upstream app_{r.name} {{
-    server {r.node_ip}:{r.host_port};
+{servers}
     keepalive 16;
 }}
 
@@ -138,23 +149,54 @@ class RunningDeploy(Protocol):
     """The part of a deploy that decides routing."""
 
     @property
+    def id(self) -> str: ...
+    @property
     def app_name(self) -> str: ...
     @property
     def status(self) -> str: ...
     @property
+    def created_at(self) -> datetime | None: ...
+
+
+class PlacedReplica(Protocol):
+    """Where a replica listens."""
+
+    @property
     def node(self) -> str: ...
     @property
     def host_port(self) -> int: ...
+
+
+class StoredReplica(PlacedReplica, Protocol):
     @property
-    def created_at(self) -> datetime | None: ...
+    def deploy_id(self) -> str: ...
+
+
+def route_for(
+    app_name: str,
+    replicas: Iterable[PlacedReplica],
+    node_ips: Mapping[str, str],
+    routable: AbstractSet[str],
+) -> Route | None:
+    """The app's route over the replicas on routable nodes; None if there are none."""
+    upstreams = tuple(
+        Upstream(node_ips[r.node], r.host_port)
+        for r in replicas
+        if r.node in routable and r.node in node_ips
+    )
+    return Route(app_name, upstreams) if upstreams else None
 
 
 def running_routes(
     deploys: Iterable[RunningDeploy],
-    runner_addrs: dict[str, str],
+    replicas: Iterable[StoredReplica],
+    node_ips: Mapping[str, str],
+    routable: AbstractSet[str],
     skip_app: str | None = None,
 ) -> list[Route]:
-    """One route per app: its latest running deploy; skip_app is left out."""
+    """One route per app: the replicas of its latest running deploy that sit on routable
+    nodes. An app with none is left out; skip_app is left out too.
+    """
     latest: dict[str, RunningDeploy] = {}
     for d in deploys:
         if d.status != "running" or d.app_name == skip_app:
@@ -165,7 +207,13 @@ def running_routes(
         if prev is None or (prev.created_at and d.created_at > prev.created_at):
             latest[d.app_name] = d
 
-    return [
-        Route(d.app_name, node_ip(runner_addrs[d.node]), d.host_port)
-        for d in latest.values()
-    ]
+    by_deploy: dict[str, list[StoredReplica]] = {}
+    for r in replicas:
+        by_deploy.setdefault(r.deploy_id, []).append(r)
+
+    routes = []
+    for d in latest.values():
+        route = route_for(d.app_name, by_deploy.get(d.id, []), node_ips, routable)
+        if route is not None:
+            routes.append(route)
+    return routes

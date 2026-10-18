@@ -14,19 +14,21 @@ from pathlib import Path
 
 import grpc
 
-from app.agents.client import Agents, DeployResult, ReplicaInfo, ReplicaResult
-from app.apps.services.facade import AppNotFoundError, AppsFacade
-from app.deploys.repositories.deploys import Deploy
-from app.deploys.services.routing import stopped_apps
-from app.deploys.services.scheduler import pick_runner
-from app.deploys.uow import DeploysUoW
-from app.ingress.routes import (
-    Route,
-    RouteApplyError,
-    RouteWriter,
-    node_ip,
-    running_routes,
+from app.agents.client import (
+    Agents,
+    DeployResult,
+    ReplicaInfo,
+    ReplicaResult,
+    UnknownNodeError,
 )
+from app.apps.services.facade import App, AppNotFoundError, AppsFacade
+from app.deploys.repositories.deploys import Deploy
+from app.deploys.repositories.replicas import Replica, replica_id
+from app.deploys.services.routing import current_routes, node_maps, stopped_apps
+from app.deploys.services.scheduler import NoRunnersError, pick_node
+from app.deploys.uow import DeploysUoW
+from app.ingress.routes import RouteApplyError, RouteWriter, route_for
+from app.nodes.services.facade import NodesFacade
 
 logger = logging.getLogger(__name__)
 
@@ -59,8 +61,8 @@ class RunnerContext:
     agents: Agents
     uow_factory: Callable[[], DeploysUoW]
     apps: AppsFacade
+    nodes: NodesFacade
     routes: RouteWriter
-    runner_addrs: dict[str, str]
     trusted_proxy: str
     owner: str
     poll_interval: float = 1.5  # a parameter so tests don't sleep
@@ -79,7 +81,7 @@ async def process_deploy(ctx: RunnerContext, deploy: Deploy) -> None:
     Never raises (except cancellation and a database failure on a write).
     """
     stage = "build"
-    replica: ReplicaResult | None = None  # set once we hold one, to compensate
+    placed: list[ReplicaResult] = []  # the replicas we hold, to compensate
     try:
         if deploy.attempts > ctx.max_attempts:
             await _write(
@@ -99,12 +101,16 @@ async def process_deploy(ctx: RunnerContext, deploy: Deploy) -> None:
             return
 
         stage = "start"
-        replica = await _ensure_replica(ctx, current)
+        await _ensure_replicas(ctx, current, placed)
         stage = "route"
-        await _publish_and_finish(ctx, current, replica)
+        await _publish_and_finish(ctx, current, placed)
 
     except AppNotFoundError:
         _log_cancelled(deploy.id)
+
+    except NoRunnersError:
+        logger.warning("deploy %s: no ready runner node", deploy.id)
+        await _fail(ctx, deploy.id, "start failed: no node is available", placed)
 
     except grpc.aio.AioRpcError as e:
         logger.warning(
@@ -115,11 +121,11 @@ async def process_deploy(ctx: RunnerContext, deploy: Deploy) -> None:
             e.details(),
         )
         reason = _USER_MESSAGES.get(e.code(), "internal error")
-        await _fail(ctx, deploy.id, f"{stage} failed: {reason}", replica)
+        await _fail(ctx, deploy.id, f"{stage} failed: {reason}", placed)
 
     except Exception:
         logger.exception("deploy %s: unexpected error during %s", deploy.id, stage)
-        await _fail(ctx, deploy.id, f"{stage} failed: internal error", replica)
+        await _fail(ctx, deploy.id, f"{stage} failed: internal error", placed)
 
 
 async def _start_build(ctx: RunnerContext, deploy: Deploy) -> Deploy | None:
@@ -197,91 +203,204 @@ async def _await_build(ctx: RunnerContext, deploy: Deploy) -> Deploy | None:
     )
 
 
-async def _ensure_replica(ctx: RunnerContext, deploy: Deploy) -> ReplicaResult:
-    """The deploy's replica: the one already running (a resumed deploy), else RunReplica."""
-    replica_id = f"{deploy.id}-r0"
-    found = await find_replica(ctx.agents, replica_id)
-    if found is not None and found[1].state == "RUNNING":
-        node, info = found
-        logger.info("deploy %s: replica %s already on %s", deploy.id, replica_id, node)
-        return ReplicaResult(replica_id, node, info.host_port)
+async def _ensure_replicas(
+    ctx: RunnerContext, deploy: Deploy, placed: list[ReplicaResult]
+) -> None:
+    """Make the deploy's replicas run: reuse those already on the nodes (a resumed deploy),
+    place the rest. `placed` is filled as we go, so a failure can undo them.
+
+    At least one replica is enough; none raises the last error.
+    """
+    wanted = {replica_id(deploy.id, i): i for i in range(deploy.desired_replicas)}
+    by_node, _ = await list_replicas_by_node(ctx.agents)
+    for node, infos in by_node.items():
+        for info in infos:
+            index = wanted.get(info.replica_id)
+            if index is None or info.state != "RUNNING":
+                continue
+            logger.info(
+                "deploy %s: replica %s already on %s", deploy.id, info.replica_id, node
+            )
+            found = ReplicaResult(info.replica_id, node, info.host_port)
+            _ = await _record(ctx.uow_factory, deploy.id, index, found)
+            placed.append(found)
+
+    have = {r.replica_id for r in placed}
+    missing = [i for rid, i in wanted.items() if rid not in have]
+    if not missing:
+        return
 
     app = await ctx.apps.get_app_unchecked(deploy.app_name)
-    repository, _, digest = deploy.image.rpartition("@")
-    return await ctx.agents.run_replica(
-        node=pick_runner(ctx.agents.runner_names),
-        replica_id=replica_id,
-        app_id=deploy.app_name,
-        image_repository=repository,
-        image_digest=digest,
-        container_port=CONTAINER_PORT,
-        env={
-            **app.env,
-            # Platform variables last: the user cannot override them.
-            "PORT": str(CONTAINER_PORT),
-            "FORWARDED_ALLOW_IPS": ctx.trusted_proxy,
-        },
-        cpu_millicores=DEFAULT_CPU_MILLICORES,
-        memory_bytes=DEFAULT_MEMORY_BYTES,
+    error = await place_replicas(
+        ctx.agents,
+        ctx.nodes,
+        ctx.uow_factory,
+        deploy,
+        app,
+        missing,
+        placed,
+        ctx.trusted_proxy,
     )
+    if error is not None:
+        logger.warning(
+            "deploy %s: %d of %d replicas started",
+            deploy.id,
+            len(placed),
+            deploy.desired_replicas,
+        )
+    if not placed and error is not None:
+        raise error
+
+
+async def place_replicas(
+    agents: Agents,
+    nodes: NodesFacade,
+    uow_factory: Callable[[], DeploysUoW],
+    deploy: Deploy,
+    app: App,
+    indices: list[int],
+    placed: list[ReplicaResult],
+    trusted_proxy: str,
+) -> Exception | None:
+    """RunReplica for each index on the node the scheduler picks; successes are appended to
+    `placed` and recorded. A node that fails is skipped for the rest of the call.
+
+    Returns the last error (None if every replica started); cancellation propagates.
+    """
+    async with uow_factory() as uow:
+        own = await uow.replicas.list_running([deploy.id])
+        total_counts = await uow.replicas.count_running_by_node()
+    app_counts: dict[str, int] = {}
+    for r in own:
+        app_counts[r.node] = app_counts.get(r.node, 0) + 1
+
+    repository, _, digest = deploy.image.rpartition("@")
+    env = {
+        **app.env,
+        # Platform variables last: the user cannot override them.
+        "PORT": str(CONTAINER_PORT),
+        "FORWARDED_ALLOW_IPS": trusted_proxy,
+    }
+    failed_nodes: set[str] = set()
+    last_error: Exception | None = None
+
+    for index in indices:
+        while True:
+            ready = [r.name for r in await nodes.runners() if r.ready]
+            candidates = [n for n in ready if n not in failed_nodes]
+            try:
+                node = pick_node(candidates, app_counts, total_counts)
+            except NoRunnersError as e:
+                if last_error is None:  # else keep why the nodes we tried failed
+                    last_error = e
+                break
+            try:
+                result = await agents.run_replica(
+                    node=node,
+                    replica_id=replica_id(deploy.id, index),
+                    app_id=deploy.app_name,
+                    image_repository=repository,
+                    image_digest=digest,
+                    container_port=CONTAINER_PORT,
+                    env=env,
+                    cpu_millicores=DEFAULT_CPU_MILLICORES,
+                    memory_bytes=DEFAULT_MEMORY_BYTES,
+                )
+            except (grpc.aio.AioRpcError, UnknownNodeError) as e:
+                logger.warning(
+                    "deploy %s: replica %d on %s failed: %r", deploy.id, index, node, e
+                )
+                failed_nodes.add(node)
+                last_error = e
+                continue
+            placed.append(result)
+            app_counts[node] = app_counts.get(node, 0) + 1
+            total_counts[node] = total_counts.get(node, 0) + 1
+            _ = await _record(uow_factory, deploy.id, index, result)
+            break
+
+    return last_error
+
+
+async def _record(
+    uow_factory: Callable[[], DeploysUoW],
+    deploy_id: str,
+    index: int,
+    replica: ReplicaResult,
+) -> bool:
+    """Write the replica's row; False if the deploy is gone."""
+    async with uow_factory() as uow:
+        saved = await uow.replicas.save(
+            Replica(
+                id=replica.replica_id,
+                deploy_id=deploy_id,
+                index=index,
+                node=replica.node,
+                host_port=replica.host_port,
+            )
+        )
+        if saved:
+            await uow.commit()
+        return saved
 
 
 async def _publish_and_finish(
-    ctx: RunnerContext, deploy: Deploy, replica: ReplicaResult
+    ctx: RunnerContext, deploy: Deploy, placed: list[ReplicaResult]
 ) -> None:
     """starting -> running: publish the route, then mark the deploy; compensate on failure."""
-    this_route = Route(
-        deploy.app_name, node_ip(ctx.runner_addrs[replica.node]), replica.host_port
-    )
     compensate = False  # the route was not published: undo RunReplica below
     async with ctx.routes.lock:
         async with ctx.uow_factory() as uow:  # released before apply/wait_applied
             current = await uow.deploys.get(deploy.id)
-            deploys = await uow.deploys.list_all()
+            others = await current_routes(uow, ctx.nodes, skip_app=deploy.app_name)
         if current is None:
-            # The app was deleted while the replica was starting: don't publish.
+            # The app was deleted while the replicas were starting: don't publish.
             _log_cancelled(deploy.id)
             compensate = True
         elif current.lease_owner != ctx.owner:
             _log_lost(deploy.id)
             return
         else:
-            desired = running_routes(
-                deploys, ctx.runner_addrs, skip_app=deploy.app_name
-            )
-            desired.append(this_route)
-            try:
-                stopped = await stopped_apps(ctx.apps, desired, deploy.app_name)
-                gen = ctx.routes.apply(desired, stopped)
-                await ctx.routes.wait_applied(gen)
-            except (RouteApplyError, TimeoutError) as e:
-                logger.warning("deploy %s: route failed: %r", deploy.id, e)
+            node_ips, routable = await node_maps(ctx.nodes)
+            this_route = route_for(deploy.app_name, placed, node_ips, routable)
+            if this_route is None:
+                logger.warning("deploy %s: no replica on a ready node", deploy.id)
                 compensate = await _fail(
                     ctx,
                     deploy.id,
-                    "route failed: could not publish the app's address",
+                    "route failed: the replicas are on nodes that are not ready",
                     None,
                 )
+            else:
+                desired = [*others, this_route]
+                try:
+                    stopped = await stopped_apps(ctx.apps, desired, deploy.app_name)
+                    gen = ctx.routes.apply(desired, stopped)
+                    await ctx.routes.wait_applied(gen)
+                except (RouteApplyError, TimeoutError) as e:
+                    logger.warning("deploy %s: route failed: %r", deploy.id, e)
+                    compensate = await _fail(
+                        ctx,
+                        deploy.id,
+                        "route failed: could not publish the app's address",
+                        None,
+                    )
 
     if compensate:
         # Outside the lock: a node RPC must not block other deploys.
-        await _remove_replica(ctx.agents, replica)
+        await _remove_replicas(ctx, placed)
         return
 
-    if await _write(
-        ctx,
-        deploy.id,
-        status="running",
-        node=replica.node,
-        host_port=replica.host_port,
-    ):
+    if await _write(ctx, deploy.id, status="running", ran=True):
         logger.info(
-            "deploy %s running on %s:%d", deploy.id, replica.node, replica.host_port
+            "deploy %s running on %s",
+            deploy.id,
+            ", ".join(f"{r.node}:{r.host_port}" for r in placed),
         )
         await _retire_previous(ctx, deploy)
     elif await _is_deleted(ctx, deploy.id):
         # Deleted during wait_applied: the AppDeleted handler re-applies the routes after us.
-        await _remove_replica(ctx.agents, replica)
+        await _remove_replicas(ctx, placed)
 
 
 async def _retire_previous(ctx: RunnerContext, deploy: Deploy) -> None:
@@ -298,6 +417,8 @@ async def _retire_previous(ctx: RunnerContext, deploy: Deploy) -> None:
             ]
             for d in older:
                 _ = await uow.deploys.update(d.id, status="superseded")
+            old_replicas = await uow.replicas.list_running(d.id for d in older)
+            await uow.replicas.mark_removed(r.id for r in old_replicas)
             await uow.commit()
     except Exception:
         logger.warning(
@@ -305,22 +426,25 @@ async def _retire_previous(ctx: RunnerContext, deploy: Deploy) -> None:
         )
         return
 
-    for d in older:
-        if await remove_replica_quietly(ctx.agents, d.node, f"{d.id}-r0"):
-            logger.info("deploy %s: superseded %s, its replica is removed", deploy.id, d.id)
+    for r in old_replicas:
+        if await remove_replica_quietly(ctx.agents, r.node, r.id):
+            logger.info("deploy %s: superseded replica %s is removed", deploy.id, r.id)
 
 
 async def _fail(
-    ctx: RunnerContext, deploy_id: str, error: str, replica: ReplicaResult | None
+    ctx: RunnerContext,
+    deploy_id: str,
+    error: str,
+    placed: list[ReplicaResult] | None,
 ) -> bool:
-    """Mark failed and remove the replica; True if the replica was ours to remove.
+    """Mark failed and remove the replicas; True if they were ours to remove.
 
-    A lost lease means someone else owns the deploy now: leave its replica alone.
+    A lost lease means someone else owns the deploy now: leave its replicas alone.
     """
     ours = await _write(ctx, deploy_id, status="failed", error=error) is not None
     ours = ours or await _is_deleted(ctx, deploy_id)
     if ours:
-        await _remove_replica(ctx.agents, replica)
+        await _remove_replicas(ctx, placed or [])
     return ours
 
 
@@ -351,10 +475,18 @@ def _log_lost(deploy_id: str) -> None:
     logger.info("deploy %s: lease lost or deploy deleted, stopping", deploy_id)
 
 
-async def _remove_replica(agents: Agents, replica: ReplicaResult | None) -> None:
-    """Compensate RunReplica; best effort."""
-    if replica is not None:
-        _ = await remove_replica_quietly(agents, replica.node, replica.replica_id)
+async def _remove_replicas(ctx: RunnerContext, replicas: list[ReplicaResult]) -> None:
+    """Compensate RunReplica: remove the containers and retire their rows; best effort."""
+    if not replicas:
+        return
+    for replica in replicas:
+        _ = await remove_replica_quietly(ctx.agents, replica.node, replica.replica_id)
+    try:
+        async with ctx.uow_factory() as uow:
+            await uow.replicas.mark_removed(r.replica_id for r in replicas)
+            await uow.commit()
+    except Exception:
+        logger.warning("could not retire replica rows", exc_info=True)
 
 
 async def remove_replica_quietly(agents: Agents, node: str, replica_id: str) -> bool:
@@ -373,7 +505,7 @@ async def list_replicas_by_node(
     agents: Agents,
 ) -> tuple[dict[str, list[ReplicaInfo]], set[str]]:
     """Replicas of every reachable runner, and the names of the runners that did not answer."""
-    names = agents.runner_names
+    names = await agents.runner_names()
     answers = await asyncio.gather(
         *(agents.list_replicas(n) for n in names), return_exceptions=True
     )

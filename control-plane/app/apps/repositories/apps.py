@@ -20,7 +20,7 @@ class App:
     owner_id: UUID | None = None
     id: UUID | None = None
     created_at: datetime | None = None
-    replicas: int = 1  # desired state: 1 = running, 0 = stopped
+    replicas: int = 1  # desired state: 0 = stopped, 1..5 = running
     # Secret values: kept out of repr so they cannot reach a log line.
     env: dict[str, str] = field(default_factory=dict, repr=False)
 

@@ -3,12 +3,54 @@ root_package = app
 include_external_packages = True
 
 [importlinter:contract:apps-independent]
-name = The apps domain knows nothing about deploys
+name = The apps domain knows nothing about deploys or nodes
 type = forbidden
 source_modules =
     app.apps
 forbidden_modules =
     app.deploys
+    app.nodes
+
+[importlinter:contract:nodes-independent]
+name = The nodes domain knows nothing about apps, deploys, agents or ingress
+type = forbidden
+source_modules =
+    app.nodes
+forbidden_modules =
+    app.apps
+    app.deploys
+    app.agents
+    app.ingress
+# Allowed: a router reaches app.core.deps (which wires agents and ingress) through auth.deps.
+allow_indirect_imports = True
+
+[importlinter:contract:agents-independent]
+name = The agents client knows no domain (it asks a Directory protocol)
+type = forbidden
+source_modules =
+    app.agents
+forbidden_modules =
+    app.apps
+    app.deploys
+    app.nodes
+    app.auth
+
+[importlinter:contract:deploys-use-nodes-via-facade]
+name = Deploys reach the nodes domain only through its facade and public.py
+type = forbidden
+source_modules =
+    app.deploys
+forbidden_modules =
+    app.nodes.deps
+    app.nodes.repositories
+    app.nodes.routers
+    app.nodes.schemas
+    app.nodes.uow
+    app.nodes.models
+    app.nodes.services.nodes
+    app.nodes.services.monitor
+    app.nodes.services.tokens
+allow_indirect_imports = True
 
 [importlinter:contract:deploys-use-apps-via-facade]
 name = Deploys reach the apps domain only through its facade and public.py
@@ -26,14 +68,16 @@ forbidden_modules =
 allow_indirect_imports = True
 
 [importlinter:contract:domains-use-auth-in-routers-only]
-name = Apps and deploys know auth only in their routers (CurrentUser); services get a Principal
+name = Apps, deploys and nodes know auth only in their routers (CurrentUser); services get a Principal
 type = forbidden
 source_modules =
     app.apps
     app.deploys
+    app.nodes
 forbidden_modules =
     app.auth
 ignore_imports =
+    app.nodes.routers.nodes -> app.auth.deps
     app.apps.routers.apps -> app.auth.deps
     app.deploys.routers.deploys -> app.auth.deps
     app.deploys.routers.lifecycle -> app.auth.deps
@@ -46,6 +90,7 @@ source_modules =
 forbidden_modules =
     app.apps
     app.deploys
+    app.nodes
 
 [importlinter:contract:routers-skip-repositories]
 name = Routers never import repositories
@@ -53,9 +98,11 @@ type = forbidden
 source_modules =
     app.apps.routers
     app.deploys.routers
+    app.nodes.routers
 forbidden_modules =
     app.apps.repositories
     app.deploys.repositories
+    app.nodes.repositories
 # routers -> deps -> repositories is wiring, not data access.
 allow_indirect_imports = True
 
@@ -66,11 +113,13 @@ source_modules =
     app.apps.services
     app.deploys.services
     app.auth.services
+    app.nodes.services
     app.core.errors
     app.core.events
     app.apps.repositories
     app.deploys.repositories
     app.auth.repositories
+    app.nodes.repositories
 forbidden_modules =
     fastapi
     starlette
@@ -122,6 +171,7 @@ source_modules =
     app.apps.services
     app.deploys.services
     app.auth.services
+    app.nodes.services
     app.core.events
     app.core.errors
     app.deploys.handlers

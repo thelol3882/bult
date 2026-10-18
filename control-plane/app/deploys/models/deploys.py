@@ -2,7 +2,7 @@
 
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.apps.models.apps import AppModel
@@ -20,8 +20,8 @@ class DeployModel(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(), server_default="queued")
     commit_sha: Mapped[str] = mapped_column(String(), server_default="")
     image: Mapped[str] = mapped_column(String(), server_default="")
-    node: Mapped[str] = mapped_column(String(), server_default="")
-    host_port: Mapped[int] = mapped_column(server_default="0")
+    desired_replicas: Mapped[int] = mapped_column(Integer(), server_default="1")
+    ran: Mapped[bool] = mapped_column(Boolean(), server_default="false")  # reached `running`
     error: Mapped[str] = mapped_column(String(), server_default="")
     lease_owner: Mapped[str] = mapped_column(String(), server_default="")
     lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

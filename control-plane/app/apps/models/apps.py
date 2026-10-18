@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import ForeignKey, String, text
+from sqlalchemy import CheckConstraint, ForeignKey, String, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -17,7 +17,7 @@ class AppModel(UUIDv7PkMixin, TimestampMixin, Base):
     repo_url: Mapped[str] = mapped_column(String(), nullable=False)
     branch: Mapped[str] = mapped_column(String(), nullable=False)
     subdir: Mapped[str] = mapped_column(String(), server_default="")
-    replicas: Mapped[int] = mapped_column(server_default="1")  # desired: 0 = stopped
+    replicas: Mapped[int] = mapped_column(server_default="1")  # desired: 0 = stopped, max 5
     # Write-only for the API: only the keys are ever returned.
     env: Mapped[dict[str, str]] = mapped_column(
         JSONB(), server_default=text("'{}'::jsonb")
@@ -26,4 +26,9 @@ class AppModel(UUIDv7PkMixin, TimestampMixin, Base):
     # RESTRICT: a cascade would orphan the replicas running on the nodes.
     owner_id: Mapped[UUID] = mapped_column(
         ForeignKey("users.id", ondelete="RESTRICT"), index=True
+    )
+
+    __table_args__ = (
+        # Keep in sync with core.config.MAX_REPLICAS.
+        CheckConstraint("replicas BETWEEN 0 AND 5", name="replicas_range"),
     )

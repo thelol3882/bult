@@ -5,11 +5,12 @@ import json
 
 import pytest
 
-from app.ingress.routes import Route, RouteApplyError, RouteWriter, render
+from app.ingress.routes import Route, RouteApplyError, RouteWriter, Upstream, render
+from tests.fakes import one_route
 
 
 def test_render_server_block():
-    files = render([Route("blog", "192.168.252.6", 20002)], "bult.localhost")
+    files = render([one_route("blog", "192.168.252.6", 20002)], "bult.localhost")
 
     assert list(files) == ["blog.conf"]
     conf = files["blog.conf"]
@@ -23,7 +24,7 @@ def test_apply_writes_version_atomically(tmp_path):
     writer = RouteWriter(tmp_path, "bult.localhost")
     desired = tmp_path / "desired"
 
-    gen1 = writer.apply([Route("blog", "192.168.252.6", 20002)])
+    gen1 = writer.apply([one_route("blog", "192.168.252.6", 20002)])
     gen2 = writer.apply([])
 
     assert (gen1, gen2) == (1, 2)
@@ -62,7 +63,7 @@ def test_wait_applied_rejected_and_timeout(tmp_path):
 
 def test_render_stopped_app_is_a_server_block_without_an_upstream():
     files = render(
-        [Route("blog", "192.168.252.6", 20002)], "bult.localhost", stopped=["shop"]
+        [one_route("blog", "192.168.252.6", 20002)], "bult.localhost", stopped=["shop"]
     )
 
     assert sorted(files) == ["blog.conf", "shop.conf"]
@@ -73,7 +74,7 @@ def test_render_stopped_app_is_a_server_block_without_an_upstream():
 
 
 def test_a_route_wins_over_the_stopped_flag_for_the_same_name():
-    files = render([Route("blog", "192.168.252.6", 20002)], "bult.localhost", ["blog"])
+    files = render([one_route("blog", "192.168.252.6", 20002)], "bult.localhost", ["blog"])
 
     assert "proxy_pass http://app_blog;" in files["blog.conf"]
 
@@ -84,3 +85,16 @@ def test_apply_writes_stopped_apps(tmp_path):
     gen = writer.apply([], stopped=["shop"])
 
     assert (tmp_path / "desired" / str(gen) / "shop.conf").exists()
+
+
+def test_render_balances_over_every_replica_of_the_app():
+    route = Route(
+        "blog",
+        (Upstream("192.168.252.6", 20002), Upstream("192.168.252.7", 20005)),
+    )
+
+    conf = render([route], "bult.localhost")["blog.conf"]
+
+    assert "server 192.168.252.6:20002;" in conf
+    assert "server 192.168.252.7:20005;" in conf
+    assert conf.count("proxy_pass") == 1  # one upstream block, nginx round-robins

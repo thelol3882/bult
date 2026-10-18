@@ -7,11 +7,16 @@ from typing import Protocol, Self
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.deploys.repositories.deploys import DeployRepository, InMemoryDeployRepository
-from app.deploys.repositories.sql import SqlDeployRepository
+from app.deploys.repositories.replicas import (
+    InMemoryReplicaRepository,
+    ReplicaRepository,
+)
+from app.deploys.repositories.sql import SqlDeployRepository, SqlReplicaRepository
 
 
 class DeploysUoW(Protocol):
     deploys: DeployRepository
+    replicas: ReplicaRepository
 
     async def __aenter__(self) -> Self: ...
     async def __aexit__(self, *exc: object) -> None: ...
@@ -20,6 +25,7 @@ class DeploysUoW(Protocol):
 
 class SqlDeploysUoW:
     deploys: DeployRepository
+    replicas: ReplicaRepository
 
     def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session_factory = session_factory
@@ -27,6 +33,7 @@ class SqlDeploysUoW:
     async def __aenter__(self) -> Self:
         self._session = self._session_factory()
         self.deploys = SqlDeployRepository(self._session)
+        self.replicas = SqlReplicaRepository(self._session)
         return self
 
     async def commit(self) -> None:
@@ -41,9 +48,12 @@ class InMemoryDeploysUoW:
     """Test fake: shares one repository across `with` blocks, records commits."""
 
     deploys: DeployRepository
+    replicas: ReplicaRepository
 
-    def __init__(self, repo: InMemoryDeployRepository | None = None) -> None:
-        self.deploys = repo or InMemoryDeployRepository()
+    def __init__(self) -> None:
+        replicas = InMemoryReplicaRepository()
+        self.replicas = replicas
+        self.deploys = InMemoryDeployRepository(replicas)
         self.commits = 0
 
     async def __aenter__(self) -> Self:

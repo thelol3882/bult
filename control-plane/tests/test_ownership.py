@@ -38,6 +38,7 @@ def blog(client: TestClient, deploys_uow: InMemoryDeploysUoW) -> None:
         ("POST", "/apps/blog/stop", None),
         ("POST", "/apps/blog/start", None),
         ("PUT", "/apps/blog/env", {"env": {"A": "1"}}),
+        ("PUT", "/apps/blog/replicas", {"replicas": 2}),
         ("GET", "/apps/blog/logs", None),
     ],
 )

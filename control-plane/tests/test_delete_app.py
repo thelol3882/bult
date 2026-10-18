@@ -8,22 +8,21 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app.apps.events import AppDeleted
-from app.deploys.repositories.deploys import Deploy
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route
-from tests.fakes import FakeAgentClients, FakeRoutes, auth_headers, rpc_error
+from tests.fakes import (
+    FakeAgentClients,
+    FakeRoutes,
+    add_running_deploy,
+    auth_headers,
+    one_route,
+    rpc_error,
+)
 
 BODY = {
     "name": "blog",
     "preset": "fastapi",
     "repo_url": "https://github.com/thelol3882/bult",
 }
-
-
-def _running(deploy_id: str, app_name: str, port: int) -> Deploy:
-    return Deploy(
-        id=deploy_id, app_name=app_name, status="running", node="node-a", host_port=port
-    )
 
 
 def _create(client: TestClient, name: str) -> None:
@@ -38,8 +37,8 @@ def test_delete_cleans_up_deploys_replicas_and_routes(
 ):
     _create(client, "blog")
     _create(client, "shop")
-    asyncio.run(deploys_uow.deploys.add(_running("d-blog", "blog", 30001)))
-    asyncio.run(deploys_uow.deploys.add(_running("d-shop", "shop", 30002)))
+    asyncio.run(add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)]))
+    asyncio.run(add_running_deploy(deploys_uow, "d-shop", "shop", [("node-a", 30002)]))
     agents.seed_replica("d-blog-r0", "blog")
     agents.seed_replica("d-shop-r0", "shop")
 
@@ -49,7 +48,7 @@ def test_delete_cleans_up_deploys_replicas_and_routes(
     assert asyncio.run(deploys_uow.deploys.get("d-blog")) is None
     assert asyncio.run(deploys_uow.deploys.get("d-shop")) is not None
     assert agents.remove_calls == [{"node": "node-a", "replica_id": "d-blog-r0"}]
-    assert routes.applied[-1] == [Route("shop", "10.0.0.5", 30002)]
+    assert routes.applied[-1] == [one_route("shop", "10.0.0.5", 30002)]
     assert client.get("/apps/blog").status_code == 404
     assert list(agents.replicas["node-a"]) == ["d-shop-r0"]
 
@@ -62,8 +61,8 @@ def test_delete_removes_replicas_even_when_the_cascade_took_the_deploy_rows(
 ):
     _create(client, "blog")
     _create(client, "shop")
-    asyncio.run(deploys_uow.deploys.add(_running("d-blog", "blog", 30001)))
-    asyncio.run(deploys_uow.deploys.add(_running("d-shop", "shop", 30002)))
+    asyncio.run(add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)]))
+    asyncio.run(add_running_deploy(deploys_uow, "d-shop", "shop", [("node-a", 30002)]))
     agents.seed_replica("d-blog-r0", "blog")
     agents.seed_replica("d-shop-r0", "shop")
     # Postgres ON DELETE CASCADE removes the rows in the same commit as the app.
@@ -72,7 +71,7 @@ def test_delete_removes_replicas_even_when_the_cascade_took_the_deploy_rows(
     assert client.delete("/apps/blog").status_code == 204
 
     assert agents.remove_calls == [{"node": "node-a", "replica_id": "d-blog-r0"}]
-    assert routes.applied[-1] == [Route("shop", "10.0.0.5", 30002)]
+    assert routes.applied[-1] == [one_route("shop", "10.0.0.5", 30002)]
 
 
 def test_delete_removes_superseded_replicas_too(
@@ -117,7 +116,7 @@ def test_failed_replica_removal_is_logged_not_raised(
 ):
     agents.remove_error = rpc_error(grpc.StatusCode.UNAVAILABLE)
     _create(client, "blog")
-    asyncio.run(deploys_uow.deploys.add(_running("d-blog", "blog", 30001)))
+    asyncio.run(add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)]))
     agents.seed_replica("d-blog-r0", "blog")
 
     assert client.delete("/apps/blog").status_code == 204

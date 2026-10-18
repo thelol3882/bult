@@ -18,13 +18,20 @@ from app.core.deps import get_agents, get_routes, get_settings
 from app.deploys.deps import get_deploys_uow_factory
 from app.deploys.uow import InMemoryDeploysUoW
 from app.main import create_app
+from app.nodes.deps import get_node_service
+from app.nodes.public import get_nodes_facade
+from app.nodes.services.nodes import NodeService
+from app.nodes.uow import InMemoryNodesUoW
 from tests.fakes import (
     DOMAIN,
+    NODE_TOKENS,
     RUNNERS,
     TEST_JWT_SECRET,
     TRUSTED_PROXY,
     CheapPasswordHasher,
     FakeAgentClients,
+    FakeClock,
+    FakeNodes,
     FakeRoutes,
     auth_headers,
 )
@@ -47,6 +54,7 @@ def settings(tmp_path: Path) -> Settings:
         database_url=TEST_DATABASE_URL,
         jwt_secret=SecretStr(TEST_JWT_SECRET),
         jwt_ttl_seconds=86400,
+        node_tokens={name: SecretStr(t) for name, t in NODE_TOKENS.items()},
     )
 
 
@@ -67,9 +75,33 @@ def auth_uow() -> InMemoryAuthUoW:
 
 
 @pytest.fixture
-def agents() -> FakeAgentClients:
+def nodes() -> FakeNodes:
+    """The runners the deploys domain sees: node-a, ready."""
+    return FakeNodes()
+
+
+@pytest.fixture
+def agents(nodes: FakeNodes) -> FakeAgentClients:
     """Agents that never fail."""
-    return FakeAgentClients()
+    return FakeAgentClients(nodes=nodes)
+
+
+@pytest.fixture
+def clock() -> FakeClock:
+    return FakeClock()
+
+
+@pytest.fixture
+def nodes_uow() -> InMemoryNodesUoW:
+    return InMemoryNodesUoW()
+
+
+@pytest.fixture
+def node_service(
+    nodes_uow: InMemoryNodesUoW, settings: Settings, clock: FakeClock
+) -> NodeService:
+    """The real nodes service on an in-memory repository (heartbeat and /nodes tests)."""
+    return NodeService(lambda: nodes_uow, settings, clock=clock, cache_ttl=0)
 
 
 @pytest.fixture
@@ -82,6 +114,8 @@ def app(
     routes: FakeRoutes,
     settings: Settings,
     agents: FakeAgentClients,
+    nodes: FakeNodes,
+    node_service: NodeService,
 ) -> Iterator[FastAPI]:
     """A fresh app with fakes wired in; the env vars feed the lifespan when a test runs it."""
     monkeypatch.setenv("BULT_BUILDER", "builder:50051")
@@ -91,6 +125,7 @@ def app(
     monkeypatch.setenv("DATABASE_URL", TEST_DATABASE_URL)
     monkeypatch.setenv("BULT_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("BULT_DEPLOY_WORKER", "false")
+    monkeypatch.setenv("BULT_NODE_MONITOR", "false")
 
     def apps_uow_factory() -> InMemoryAppsUoW:
         return apps_uow
@@ -110,6 +145,8 @@ def app(
     application.state.apps_uow_factory = apps_uow_factory
     application.state.deploys_uow_factory = deploys_uow_factory
     application.state.agents = agents
+    application.state.nodes = nodes
+    application.state.node_service = node_service
     application.state.routes = routes
     application.state.settings = settings
     application.dependency_overrides[get_apps_uow_factory] = lambda: apps_uow_factory
@@ -120,6 +157,8 @@ def app(
     application.dependency_overrides[get_routes] = lambda: routes
     application.dependency_overrides[get_settings] = lambda: settings
     application.dependency_overrides[get_agents] = lambda: agents
+    application.dependency_overrides[get_nodes_facade] = lambda: nodes
+    application.dependency_overrides[get_node_service] = lambda: node_service
     yield application
     application.dependency_overrides.clear()
 

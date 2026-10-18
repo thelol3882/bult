@@ -7,17 +7,16 @@ from app.apps.events import AppDeleted
 from app.apps.services.facade import AppsFacade
 from app.core.config import Settings
 from app.deploys.handlers import on_app_deleted
-from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.deploys import DeployService
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route
-from tests.fakes import FakeAgentClients, FakeApps, FakeRoutes
-
-
-def _running(deploy_id: str, app_name: str, port: int) -> Deploy:
-    return Deploy(
-        id=deploy_id, app_name=app_name, status="running", node="node-a", host_port=port
-    )
+from app.nodes.services.facade import NodesFacade
+from tests.fakes import (
+    FakeAgentClients,
+    FakeApps,
+    FakeRoutes,
+    add_running_deploy,
+    one_route,
+)
 
 
 def _service(
@@ -27,7 +26,12 @@ def _service(
     settings: Settings,
 ) -> DeployService:
     return DeployService(
-        lambda: uow, cast(AppsFacade, FakeApps()), agents, routes, settings
+        lambda: uow,
+        cast(AppsFacade, FakeApps()),
+        agents,
+        cast(NodesFacade, agents.nodes),
+        routes,
+        settings,
     )
 
 
@@ -38,8 +42,8 @@ def test_remove_app_drops_deploys_reapplies_routes_and_removes_replica(
     settings: Settings,
 ):
     async def scenario() -> None:
-        await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
-        await deploys_uow.deploys.add(_running("d-shop", "shop", 30002))
+        await add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)])
+        await add_running_deploy(deploys_uow, "d-shop", "shop", [("node-a", 30002)])
         agents.seed_replica("d-blog-r0", "blog")
         agents.seed_replica("d-shop-r0", "shop")
         await _service(deploys_uow, agents, routes, settings).remove_app("blog")
@@ -50,7 +54,7 @@ def test_remove_app_drops_deploys_reapplies_routes_and_removes_replica(
     assert (
         deploys_uow.commits == 1
     )  # the delete is committed before routes/replicas are touched
-    assert routes.applied[-1] == [Route("shop", "10.0.0.5", 30002)]
+    assert routes.applied[-1] == [one_route("shop", "10.0.0.5", 30002)]
     assert agents.remove_calls == [{"node": "node-a", "replica_id": "d-blog-r0"}]
 
 

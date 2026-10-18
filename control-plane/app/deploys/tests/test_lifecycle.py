@@ -8,13 +8,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.deploys.repositories.deploys import Deploy
+from app.deploys.repositories.replicas import Replica, replica_id
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route
 from tests.fakes import (
     HOST_PORT,
     FakeAgentClients,
     FakeRoutes,
     make_worker,
+    one_route,
     rpc_error,
     run_deploys,
 )
@@ -34,11 +35,20 @@ def blog(client: TestClient) -> None:
 
 
 def _add(uow: InMemoryDeploysUoW, deploy: Deploy) -> None:
-    asyncio.run(uow.deploys.add(deploy))
+    """Store the deploy; a running one also gets its replica 0 on node-a."""
+
+    async def add() -> None:
+        await uow.deploys.add(deploy)
+        if deploy.status == "running":
+            await uow.replicas.save(
+                Replica(replica_id(deploy.id, 0), deploy.id, 0, "node-a", 30001)
+            )
+
+    asyncio.run(add())
 
 
 def _running(
-    deploy_id: str, status: str = "running", image: str = OLD_IMAGE, node: str = "node-a"
+    deploy_id: str, status: str = "running", image: str = OLD_IMAGE
 ) -> Deploy:
     return Deploy(
         id=deploy_id,
@@ -46,8 +56,7 @@ def _running(
         status=status,  # pyright: ignore[reportArgumentType]
         commit_sha="c0ffee",
         image=image,
-        node=node,
-        host_port=30001,
+        ran=True,
     )
 
 
@@ -141,7 +150,7 @@ def test_start_runs_the_last_image_without_a_build(
     assert agents.get_calls == 0
     [call] = agents.run_calls
     assert call["image_digest"] == OLD_DIGEST
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", HOST_PORT)]
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", HOST_PORT)]
     assert routes.applied_stopped[-1] == []
 
 
@@ -258,7 +267,7 @@ def test_logs_are_the_tail_of_the_running_replica(
     resp = client.get("/apps/blog/logs", params={"tail": 2})
 
     assert resp.status_code == 200
-    assert resp.json() == {"deploy_id": "d1", "lines": ["two", "three"]}
+    assert resp.json() == {"deploy_id": "d1", "replica": 0, "lines": ["two", "three"]}
     assert agents.log_calls == [
         {"node": "node-a", "replica_id": "d1-r0", "tail_lines": 2}
     ]
@@ -282,7 +291,7 @@ def test_logs_without_a_running_deploy_are_empty(
     resp = client.get("/apps/blog/logs")
 
     assert resp.status_code == 200
-    assert resp.json() == {"deploy_id": None, "lines": []}
+    assert resp.json() == {"deploy_id": None, "replica": None, "lines": []}
     assert agents.log_calls == []
 
 
@@ -326,4 +335,4 @@ def test_logs_of_a_vanished_replica_are_empty(
     _add(deploys_uow, _running("d1"))
     agents.log_error = rpc_error(grpc.StatusCode.NOT_FOUND)
 
-    assert client.get("/apps/blog/logs").json() == {"deploy_id": "d1", "lines": []}
+    assert client.get("/apps/blog/logs").json() == {"deploy_id": "d1", "replica": 0, "lines": []}

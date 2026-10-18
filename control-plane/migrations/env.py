@@ -11,6 +11,8 @@ from app.apps.models.apps import AppModel  # noqa: F401  (registers the table)
 from app.auth.models.users import UserModel  # noqa: F401 (registers the table)
 from app.core.db import Base
 from app.deploys.models.deploys import DeployModel  # noqa: F401  (registers the table)
+from app.deploys.models.replicas import ReplicaModel  # noqa: F401  (registers the table)
+from app.nodes.models.nodes import NodeModel  # noqa: F401  (registers the table)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

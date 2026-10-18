@@ -27,6 +27,12 @@ class ErrorCode(StrEnum):
     NODE_UNAVAILABLE = "node_unavailable"
     DEPLOY_NOT_CANCELLABLE = "deploy_not_cancellable"
 
+    REPLICA_NOT_FOUND = "replica_not_found"
+    NO_NODE_AVAILABLE = "no_node_available"
+
+    # nodes
+    INVALID_NODE_TOKEN = "invalid_node_token"
+
     # pagination
     INVALID_CURSOR = "invalid_cursor"
 

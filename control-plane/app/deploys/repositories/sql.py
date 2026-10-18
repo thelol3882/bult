@@ -1,15 +1,18 @@
 """DeployRepository on PostgreSQL: ORM rows in, Deploy dataclasses out."""
 
+from collections.abc import Iterable
 from datetime import datetime, timedelta
 from typing import cast
 
-from sqlalchemy import CursorResult, delete, or_, select, tuple_, update
+from sqlalchemy import CursorResult, delete, func, or_, select, tuple_, update
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.apps.errors import AppNotFoundError
 from app.deploys.errors import DeployInProgressError
 from app.deploys.models.deploys import DeployModel
+from app.deploys.models.replicas import ReplicaModel
 from app.deploys.repositories.deploys import (
     ACTIVE_STATUSES,
     OWNED_FIELDS,
@@ -17,6 +20,7 @@ from app.deploys.repositories.deploys import (
     Deploy,
     DeployStatus,
 )
+from app.deploys.repositories.replicas import Replica, ReplicaStatus
 
 
 class SqlDeployRepository:
@@ -30,8 +34,8 @@ class SqlDeployRepository:
             status=deploy.status,
             commit_sha=deploy.commit_sha,
             image=deploy.image,
-            node=deploy.node,
-            host_port=deploy.host_port,
+            desired_replicas=deploy.desired_replicas,
+            ran=deploy.ran,
             error=deploy.error,
             source_deploy_id=deploy.source_deploy_id,
         )
@@ -173,7 +177,7 @@ class SqlDeployRepository:
             .where(
                 DeployModel.app_name == app_name,
                 DeployModel.image != "",
-                DeployModel.node != "",
+                DeployModel.ran.is_(True),
             )
             .order_by(DeployModel.created_at.desc(), DeployModel.id.desc())
             .limit(1)
@@ -213,12 +217,94 @@ def _to_domain(row: DeployModel) -> Deploy:
         status=cast(DeployStatus, row.status),
         commit_sha=row.commit_sha,
         image=row.image,
-        node=row.node,
-        host_port=row.host_port,
+        desired_replicas=row.desired_replicas,
+        ran=row.ran,
         error=row.error,
         created_at=row.created_at,
         lease_owner=row.lease_owner,
         lease_until=row.lease_until,
         attempts=row.attempts,
         source_deploy_id=row.source_deploy_id,
+    )
+
+
+class SqlReplicaRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def save(self, replica: Replica) -> bool:
+        values = {
+            "node": replica.node,
+            "host_port": replica.host_port,
+            "status": "running",
+        }
+        stmt = (
+            insert(ReplicaModel)
+            .values(
+                id=replica.id,
+                deploy_id=replica.deploy_id,
+                index=replica.index,
+                **values,
+            )
+            .on_conflict_do_update(
+                index_elements=[ReplicaModel.id],
+                set_={**values, "updated_at": func.now()},
+            )
+        )
+        try:
+            await self._session.execute(stmt)
+        except IntegrityError as e:
+            cause = getattr(e.orig, "__cause__", None)
+            if getattr(cause, "constraint_name", None) == "fk_replicas_deploy_id_deploys":
+                return False  # the deploy (its app) was deleted meanwhile
+            raise
+        return True
+
+    async def list_running(self, deploy_ids: Iterable[str]) -> list[Replica]:
+        ids = list(deploy_ids)
+        if not ids:
+            return []
+        rows = await self._session.scalars(
+            select(ReplicaModel)
+            .where(ReplicaModel.deploy_id.in_(ids), ReplicaModel.status == "running")
+            .order_by(ReplicaModel.deploy_id, ReplicaModel.index)
+        )
+        return [_replica_to_domain(row) for row in rows.all()]
+
+    async def list_all_running(self) -> list[Replica]:
+        rows = await self._session.scalars(
+            select(ReplicaModel)
+            .where(ReplicaModel.status == "running")
+            .order_by(ReplicaModel.deploy_id, ReplicaModel.index)
+        )
+        return [_replica_to_domain(row) for row in rows.all()]
+
+    async def mark_removed(self, replica_ids: Iterable[str]) -> None:
+        ids = list(replica_ids)
+        if not ids:
+            return
+        await self._session.execute(
+            update(ReplicaModel)
+            .where(ReplicaModel.id.in_(ids))
+            .values(status="removed", updated_at=func.now())
+        )
+
+    async def count_running_by_node(self) -> dict[str, int]:
+        rows = await self._session.execute(
+            select(ReplicaModel.node, func.count())
+            .where(ReplicaModel.status == "running")
+            .group_by(ReplicaModel.node)
+        )
+        return {node: count for node, count in rows.all()}
+
+
+def _replica_to_domain(row: ReplicaModel) -> Replica:
+    return Replica(
+        id=row.id,
+        deploy_id=row.deploy_id,
+        index=row.index,
+        node=row.node,
+        host_port=row.host_port,
+        status=cast(ReplicaStatus, row.status),
+        created_at=row.created_at,
     )

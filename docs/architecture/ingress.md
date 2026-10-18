@@ -47,10 +47,12 @@ The snippet and the page live in the mounted `deploy/nginx` directory, next to t
 
 - A deploy becomes `running` only after its route is applied (`status.json` confirms the generation), so `running` means "the URL works".
 - Deleting an app re-applies routes without it; stopping one re-applies them with the stopped block.
-- Upstreams point at `node_ip:host_port`; a short `proxy_connect_timeout` keeps a dead node from stalling requests for 60 s.
+- An app has one `upstream` block with a `server node_ip:host_port;` line per running replica on a **ready** node (nginx's default round-robin). When a node becomes unhealthy the control plane re-applies the routes without its replicas; when it returns they are added back (`nodes.md`). An app whose replicas are all on unhealthy nodes has no server block and the default server answers `404`.
+- A short `proxy_connect_timeout` keeps a dead node from stalling requests for 60 s, which matters between a node dying and the ~15 s it takes to be called unhealthy.
 
 ## Limitations
 
+- Balancing is plain round-robin, with no weights, no health checks of the replica itself and no sticky sessions; `max_fails`/`fail_timeout` (passive checks) are not set yet.
 - One ingress instance; no TLS (`*.bult.localhost` is plain HTTP in the dev setup).
 - Up to ~1 s of propagation delay (polling).
 - The sidecar runs in the background of the ingress container without supervision: if it dies, nginx keeps serving the last applied routes but new versions are never applied, and the API times out waiting for `status.json`. A supervisor (s6, supervisord) or a separate container with a health check would fix it.

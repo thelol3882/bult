@@ -1,7 +1,7 @@
 """Fakes shared by the tests of several domains."""
 
 from collections.abc import Awaitable, Callable, Iterable
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
@@ -14,9 +14,13 @@ from pwdlib.hashers.argon2 import Argon2Hasher
 from app.agents.client import DeployResult, ReplicaInfo, ReplicaResult
 from app.apps.services.facade import App, AppNotFoundError, AppsFacade
 from app.auth.services.passwords import PasswordHasher
+from app.deploys.repositories.deploys import Deploy, DeployStatus
+from app.deploys.repositories.replicas import Replica, replica_id
 from app.deploys.services.worker import DeployWorker
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route, RouteWriter
+from app.ingress.routes import Route, RouteWriter, Upstream
+from app.nodes.services.facade import NodesFacade
+from app.nodes.services.nodes import RunnerNode
 
 COMMIT_SHA = "0123abc"
 IMAGE_REPOSITORY = "registry.local/blog"
@@ -26,6 +30,12 @@ HOST_PORT = 32768
 TRUSTED_PROXY = "10.0.0.1"
 DOMAIN = "bult.localhost"
 RUNNERS = {"node-a": "10.0.0.5:50051"}
+NODE_B = ("node-b", "10.0.0.6:50051")
+NODE_TOKENS = {
+    "node-a": "a" * 40,
+    "node-b": "b" * 40,
+    "builder-1": "c" * 40,
+}
 PASSWORD = "correct horse battery"
 TEST_JWT_SECRET = "test-secret-" + "x" * 32
 
@@ -46,6 +56,57 @@ def auth_headers(client: TestClient, email: str) -> dict[str, str]:
     login = client.post("/auth/login", json={"email": email, "password": PASSWORD})
     assert login.status_code == 200, login.text
     return {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+
+class FakeClock:
+    """A settable clock for the nodes' silence thresholds."""
+
+    def __init__(self) -> None:
+        self.now = datetime(2026, 10, 18, 12, 0, tzinfo=UTC)
+
+    def __call__(self) -> datetime:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += timedelta(seconds=seconds)
+
+
+def one_route(name: str, node_ip: str, port: int) -> Route:
+    """A route with a single replica behind it."""
+    return Route(name, (Upstream(node_ip, port),))
+
+
+class FakeNodes:
+    """The part of NodesFacade the deploys domain uses; readiness is set by the test."""
+
+    def __init__(self, runners: dict[str, str] | None = None) -> None:
+        self.addresses = dict(RUNNERS if runners is None else runners)
+        self.not_ready: set[str] = set()
+
+    def add(self, name: str, address: str, ready: bool = True) -> None:
+        self.addresses[name] = address
+        self.set_ready(name, ready)
+
+    def set_ready(self, name: str, ready: bool) -> None:
+        if ready:
+            self.not_ready.discard(name)
+        else:
+            self.not_ready.add(name)
+
+    async def runners(self) -> list[RunnerNode]:
+        return [
+            RunnerNode(name, addr, name not in self.not_ready)
+            for name, addr in sorted(self.addresses.items())
+        ]
+
+    async def builder_address(self) -> str | None:
+        return "builder:50051"
+
+    async def runner_address(self, name: str) -> str | None:
+        return self.addresses.get(name)
+
+    async def runner_names(self) -> list[str]:
+        return sorted(self.addresses)
 
 
 def rpc_error(code: grpc.StatusCode, details: str = "") -> AioRpcError:
@@ -82,12 +143,16 @@ class FakeAgentClients:
         remove_error: AioRpcError | None = None,
         on_run: Callable[[], Awaitable[None]] | None = None,
         start_error_times: int | None = None,
+        nodes: FakeNodes | None = None,
     ) -> None:
+        self.nodes = nodes or FakeNodes()
         self.start_error = start_error
         self.start_error_times = start_error_times
         self.build_states: list[str | AioRpcError] = build_states or ["RUNNING"]
         self.run_error = run_error
         self.remove_error = remove_error
+        self.run_errors: dict[str, AioRpcError] = {}  # RunReplica fails on these nodes only
+        self.fail_replica_ids: set[str] = set()  # RunReplica fails for these replicas anywhere
         self.on_run = on_run  # runs after a successful RunReplica
 
         self.start_calls: list[dict[str, Any]] = []
@@ -112,9 +177,8 @@ class FakeAgentClients:
             replica_id, app_id, port, "RUNNING"
         )
 
-    @property
-    def runner_names(self) -> list[str]:
-        return ["node-a"]
+    async def runner_names(self) -> list[str]:
+        return await self.nodes.runner_names()
 
     async def start_deploy(self, deploy_id: str, **kwargs) -> DeployResult:
         self.start_calls.append({"deploy_id": deploy_id, **kwargs})
@@ -155,12 +219,16 @@ class FakeAgentClients:
 
     async def run_replica(self, node: str, replica_id: str, **kwargs) -> ReplicaResult:
         self.run_calls.append({"node": node, "replica_id": replica_id, **kwargs})
-        if self.run_error is not None:
-            raise self.run_error
+        error = self.run_errors.get(node, self.run_error)
+        if replica_id in self.fail_replica_ids:
+            error = rpc_error(grpc.StatusCode.UNAVAILABLE)
+        if error is not None:
+            raise error
         if self.on_run is not None:
             await self.on_run()
-        self.seed_replica(replica_id, kwargs["app_id"], node, HOST_PORT)
-        return ReplicaResult(replica_id=replica_id, node=node, host_port=HOST_PORT)
+        port = HOST_PORT + len(self.run_calls) - 1  # a distinct port per call
+        self.seed_replica(replica_id, kwargs["app_id"], node, port)
+        return ReplicaResult(replica_id=replica_id, node=node, host_port=port)
 
     async def remove_replica(self, node: str, replica_id: str) -> None:
         self.remove_calls.append({"node": node, "replica_id": replica_id})
@@ -215,12 +283,48 @@ class FakeApps:
         return list(self.stopped)
 
 
+async def add_running_deploy(
+    uow: InMemoryDeploysUoW,
+    deploy_id: str,
+    app_name: str,
+    replicas: list[tuple[str, int]] | None = None,
+    *,
+    image: str = "registry.local/blog@sha256:old",
+    status: DeployStatus = "running",
+) -> Deploy:
+    """A deploy that ran, with replicas at (node, host_port); default: one on node-a.
+
+    Only a running deploy keeps live replica rows; the others have them retired.
+    """
+    placements = replicas if replicas is not None else [("node-a", HOST_PORT)]
+    deploy = await uow.deploys.add(
+        Deploy(
+            id=deploy_id,
+            app_name=app_name,
+            status=status,
+            image=image,
+            ran=True,
+            desired_replicas=len(placements) or 1,
+        )
+    )
+    for index, (node, port) in enumerate(placements):
+        await uow.replicas.save(
+            Replica(replica_id(deploy_id, index), deploy_id, index, node, port)
+        )
+    if status != "running":
+        await uow.replicas.mark_removed(
+            replica_id(deploy_id, i) for i in range(len(placements))
+        )
+    return deploy
+
+
 def make_worker(
     uow: InMemoryDeploysUoW,
     agents: FakeAgentClients,
     routes: RouteWriter,
     *,
     apps: FakeApps | None = None,
+    nodes: FakeNodes | None = None,
     worker_id: str = "w1",
     clock: Callable[[], datetime] | None = None,
     **kwargs: Any,
@@ -239,8 +343,8 @@ def make_worker(
         agents,
         lambda: uow,
         cast(AppsFacade, apps or FakeApps()),
+        cast(NodesFacade, nodes or agents.nodes),
         routes,
-        RUNNERS,
         TRUSTED_PROXY,
         **options,
     )

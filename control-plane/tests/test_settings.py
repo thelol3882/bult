@@ -49,3 +49,50 @@ def test_short_jwt_secret_is_rejected(monkeypatch: pytest.MonkeyPatch):
     with pytest.raises(ValidationError) as info:
         Settings()  # pyright: ignore[reportCallIssue]
     assert "jwt_secret" in {e["loc"][0] for e in info.value.errors()}
+
+
+@pytest.fixture
+def base_env(monkeypatch: pytest.MonkeyPatch) -> pytest.MonkeyPatch:
+    monkeypatch.setenv("BULT_BUILDER", "b:1")
+    monkeypatch.setenv("BULT_RUNNERS", "n1=10.0.0.5:50051")
+    monkeypatch.setenv("BULT_TRUSTED_PROXY", "10.0.0.1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test/test")
+    monkeypatch.setenv("BULT_JWT_SECRET", "s" * 32)
+    monkeypatch.delenv("BULT_NODE_TOKENS", raising=False)
+    return monkeypatch
+
+
+def test_node_tokens_default_to_none(base_env: pytest.MonkeyPatch):
+    assert Settings().node_tokens == {}  # pyright: ignore[reportCallIssue]
+
+
+def test_node_tokens_accept_the_compose_format_and_json(base_env: pytest.MonkeyPatch):
+    a, b = "a" * 32, "b" * 40
+
+    base_env.setenv("BULT_NODE_TOKENS", f"n1={a}, n2={b}")
+    tokens = Settings().node_tokens  # pyright: ignore[reportCallIssue]
+    assert {n: t.get_secret_value() for n, t in tokens.items()} == {"n1": a, "n2": b}
+
+    base_env.setenv("BULT_NODE_TOKENS", f'{{"n1": "{a}"}}')
+    assert list(Settings().node_tokens) == ["n1"]  # pyright: ignore[reportCallIssue]
+
+
+def test_a_short_node_token_is_rejected_without_echoing_any_secret(
+    base_env: pytest.MonkeyPatch,
+):
+    good = "g" * 40
+    base_env.setenv("BULT_NODE_TOKENS", f"n1={good},n2=short-secret")
+
+    with pytest.raises(ValidationError) as info:
+        Settings()  # pyright: ignore[reportCallIssue]
+
+    text = str(info.value)
+    assert "n2" in text and "32" in text
+    assert "short-secret" not in text and good not in text
+
+
+def test_a_malformed_node_token_entry_is_rejected(base_env: pytest.MonkeyPatch):
+    base_env.setenv("BULT_NODE_TOKENS", "just-a-word")
+
+    with pytest.raises(ValidationError):
+        Settings()  # pyright: ignore[reportCallIssue]

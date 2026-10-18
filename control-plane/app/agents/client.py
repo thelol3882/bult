@@ -57,30 +57,80 @@ class ReplicaInfo:
 
 
 class UnknownNodeError(Exception):
-    """No runner with this name in the configuration."""
+    """No runner with this name is known."""
+
+
+class Directory(Protocol):
+    """Where the agents are; the nodes domain's facade fits it."""
+
+    async def builder_address(self) -> str | None: ...
+    async def runner_address(self, name: str) -> str | None: ...
+    async def runner_names(self) -> list[str]: ...
+
+
+@dataclass
+class _Channel:
+    address: str
+    channel: grpc.aio.Channel
+
+
+CHANNEL_CLOSE_GRACE = 5  # seconds in-flight calls get when a node's address changes
+
+
+def _no_builder() -> grpc.aio.AioRpcError:
+    """Looks like any other builder outage to callers: UNAVAILABLE."""
+    return grpc.aio.AioRpcError(
+        grpc.StatusCode.UNAVAILABLE,
+        grpc.aio.Metadata(),
+        grpc.aio.Metadata(),
+        details="no ready builder node",
+    )
 
 
 class AgentClients:
-    """Channels and stubs to the builder and every runner node."""
+    """gRPC stubs to the builder and the runner nodes.
 
-    def __init__(self, builder_addr: str, runner_addrs: dict[str, str]) -> None:
-        """Channels are lazy: a node that is down does not stop startup."""
-        self._builder_channel = grpc.aio.insecure_channel(
-            builder_addr, options=CHANNEL_OPTIONS
+    A channel is created on first use for the address the directory gives, and replaced
+    when a node comes back at another address. Channels are lazy: a node that is down
+    does not stop startup.
+    """
+
+    def __init__(self, directory: Directory) -> None:
+        self._directory = directory
+        self._channels: dict[str, _Channel] = {}  # "builder" or "runner:<name>"
+
+    async def runner_names(self) -> list[str]:
+        """Every known runner node, ready or not."""
+        return await self._directory.runner_names()
+
+    async def _channel_for(self, key: str, address: str) -> grpc.aio.Channel:
+        """The channel for `key`, replaced if the node's address changed."""
+        current = self._channels.get(key)
+        if current is not None and current.address == address:
+            return current.channel
+
+        # No await between the lookup and the store: two callers cannot create two channels.
+        channel = grpc.aio.insecure_channel(address, options=CHANNEL_OPTIONS)
+        self._channels[key] = _Channel(address, channel)
+        if current is not None:
+            await current.channel.close(CHANNEL_CLOSE_GRACE)
+        return channel
+
+    async def _builder_stub(self) -> agent_pb2_grpc.BuildServiceStub:
+        address = await self._directory.builder_address()
+        if address is None:
+            raise _no_builder()
+        return agent_pb2_grpc.BuildServiceStub(
+            await self._channel_for("builder", address)
         )
-        self._builder = agent_pb2_grpc.BuildServiceStub(self._builder_channel)
 
-        self._runner_channels: dict[str, grpc.aio.Channel] = {}
-        self._runners: dict[str, agent_pb2_grpc.RuntimeServiceStub] = {}
-        for name, addr in runner_addrs.items():
-            channel = grpc.aio.insecure_channel(addr, options=CHANNEL_OPTIONS)
-            self._runner_channels[name] = channel
-            self._runners[name] = agent_pb2_grpc.RuntimeServiceStub(channel)
-
-    @property
-    def runner_names(self) -> list[str]:
-        """Runner nodes in configuration order."""
-        return list(self._runners)
+    async def _runner_stub(self, node: str) -> agent_pb2_grpc.RuntimeServiceStub:
+        address = await self._directory.runner_address(node)
+        if address is None:
+            raise UnknownNodeError(node)
+        return agent_pb2_grpc.RuntimeServiceStub(
+            await self._channel_for(f"runner:{node}", address)
+        )
 
     async def start_deploy(
         self,
@@ -102,23 +152,22 @@ class AgentClients:
             ),
             dockerfile=dockerfile,
         )
-        response = await self._builder.StartDeploy(
-            request, timeout=START_DEPLOY_TIMEOUT
-        )
+        builder = await self._builder_stub()
+        response = await builder.StartDeploy(request, timeout=START_DEPLOY_TIMEOUT)
         return _deploy_result(response.deploy)
 
     async def get_deploy(self, deploy_id: str) -> DeployResult:
         """GetDeploy on the builder."""
         request = agent_pb2.GetDeployRequest(deploy_id=deploy_id)
-        response = await self._builder.GetDeploy(request, timeout=GET_DEPLOY_TIMEOUT)
+        builder = await self._builder_stub()
+        response = await builder.GetDeploy(request, timeout=GET_DEPLOY_TIMEOUT)
         return _deploy_result(response.deploy)
 
     async def cancel_deploy(self, deploy_id: str) -> DeployResult:
         """CancelDeploy on the builder; a finished build is returned as it is."""
         request = agent_pb2.CancelDeployRequest(deploy_id=deploy_id)
-        response = await self._builder.CancelDeploy(
-            request, timeout=CANCEL_DEPLOY_TIMEOUT
-        )
+        builder = await self._builder_stub()
+        response = await builder.CancelDeploy(request, timeout=CANCEL_DEPLOY_TIMEOUT)
         return _deploy_result(response.deploy)
 
     async def run_replica(
@@ -134,9 +183,7 @@ class AgentClients:
         memory_bytes: int,
     ) -> ReplicaResult:
         """RunReplica on one runner. Idempotent on replica_id."""
-        stub = self._runners.get(node)
-        if stub is None:
-            raise UnknownNodeError(node)
+        stub = await self._runner_stub(node)
 
         request = agent_pb2.RunReplicaRequest(
             replica_id=replica_id,
@@ -161,9 +208,7 @@ class AgentClients:
 
     async def remove_replica(self, node: str, replica_id: str) -> None:
         """RemoveReplica on one runner."""
-        stub = self._runners.get(node)
-        if stub is None:
-            raise UnknownNodeError(node)
+        stub = await self._runner_stub(node)
         await stub.RemoveReplica(
             agent_pb2.RemoveReplicaRequest(replica_id=replica_id),
             timeout=REMOVE_REPLICA_TIMEOUT,
@@ -171,9 +216,7 @@ class AgentClients:
 
     async def list_replicas(self, node: str) -> list[ReplicaInfo]:
         """ListReplicas on one runner: every bult-managed replica, any app."""
-        stub = self._runners.get(node)
-        if stub is None:
-            raise UnknownNodeError(node)
+        stub = await self._runner_stub(node)
         response = await stub.ListReplicas(
             agent_pb2.ListReplicasRequest(), timeout=LIST_REPLICAS_TIMEOUT
         )
@@ -189,9 +232,7 @@ class AgentClients:
 
     async def logs(self, node: str, replica_id: str, tail_lines: int) -> str:
         """The last `tail_lines` lines of a replica's output (Logs without follow)."""
-        stub = self._runners.get(node)
-        if stub is None:
-            raise UnknownNodeError(node)
+        stub = await self._runner_stub(node)
         call = stub.Logs(
             agent_pb2.LogsRequest(
                 replica_id=replica_id, follow=False, tail_lines=tail_lines
@@ -203,9 +244,9 @@ class AgentClients:
 
     async def close(self) -> None:
         """Close every channel."""
-        await self._builder_channel.close()
-        for channel in self._runner_channels.values():
-            await channel.close()
+        channels, self._channels = self._channels, {}
+        for current in channels.values():
+            await current.channel.close()
 
 
 def _replica_state(state: int) -> str:
@@ -236,8 +277,7 @@ def _deploy_result(deploy: agent_pb2.Deploy) -> DeployResult:
 class Agents(Protocol):
     """What deploys need from the agents; AgentClients and the test fakes fit it."""
 
-    @property
-    def runner_names(self) -> list[str]: ...
+    async def runner_names(self) -> list[str]: ...
 
     async def start_deploy(
         self,

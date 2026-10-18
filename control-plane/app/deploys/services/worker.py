@@ -19,6 +19,7 @@ from app.deploys.repositories.deploys import ACTIVE_STATUSES, Deploy
 from app.deploys.services.runner import RunnerContext, process_deploy
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteWriter
+from app.nodes.services.facade import NodesFacade
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +39,8 @@ class DeployWorker:
         agents: Agents,
         uow_factory: Callable[[], DeploysUoW],
         apps: AppsFacade,
+        nodes: NodesFacade,
         routes: RouteWriter,
-        runner_addrs: dict[str, str],
         trusted_proxy: str,
         *,
         worker_id: str | None = None,
@@ -57,8 +58,8 @@ class DeployWorker:
             agents=agents,
             uow_factory=uow_factory,
             apps=apps,
+            nodes=nodes,
             routes=routes,
-            runner_addrs=runner_addrs,
             trusted_proxy=trusted_proxy,
             owner=self.worker_id,
             poll_interval=build_poll_interval,

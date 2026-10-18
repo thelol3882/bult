@@ -11,16 +11,17 @@ from app.apps.services.facade import AppsFacade
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.reconcile import fail_deploys_without_replica
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route
+from app.nodes.services.facade import NodesFacade
 from tests.fakes import (
     HOST_PORT,
     IMAGE_DIGEST,
     IMAGE_REPOSITORY,
-    RUNNERS,
     FakeAgentClients,
     FakeApps,
     FakeRoutes,
+    add_running_deploy,
     make_worker,
+    one_route,
     rpc_error,
     run_deploys,
 )
@@ -66,7 +67,7 @@ def test_background_loop_takes_a_queued_deploy_to_running(
             await worker.stop()
 
     asyncio.run(scenario())
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", HOST_PORT)]
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", HOST_PORT)]
 
 
 def test_gives_up_after_max_attempts(
@@ -121,8 +122,9 @@ def test_resume_starting_with_existing_replica_does_not_run_a_second_one(
     assert agents.start_calls == []
     assert deploy is not None
     assert deploy.status == "running"
-    assert deploy.host_port == 40001
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", 40001)]
+    [replica] = asyncio.run(deploys_uow.replicas.list_running(["d1"]))
+    assert replica.host_port == 40001
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", 40001)]
 
 
 def test_resume_starting_without_replica_runs_it_once(
@@ -331,21 +333,19 @@ def test_concurrency_is_bounded(
     assert asyncio.run(scenario()) == (2, 0)
 
 
-def _running(deploy_id: str, app_name: str, port: int, node: str = "node-a") -> Deploy:
-    return Deploy(
-        id=deploy_id, app_name=app_name, status="running", node=node, host_port=port
-    )
-
-
 def test_startup_check_fails_running_deploy_without_replica_and_drops_its_route(
     deploys_uow: InMemoryDeploysUoW, agents: FakeAgentClients, routes: FakeRoutes
 ):
     async def scenario() -> list[str]:
-        await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
-        await deploys_uow.deploys.add(_running("d-shop", "shop", 30002))
+        await add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)])
+        await add_running_deploy(deploys_uow, "d-shop", "shop", [("node-a", 30002)])
         agents.seed_replica("d-shop-r0", "shop", port=30002)  # blog's replica is gone
         return await fail_deploys_without_replica(
-            agents, lambda: deploys_uow, routes, RUNNERS, cast(AppsFacade, FakeApps())
+            agents,
+            lambda: deploys_uow,
+            routes,
+            cast(NodesFacade, agents.nodes),
+            cast(AppsFacade, FakeApps()),
         )
 
     failed = asyncio.run(scenario())
@@ -356,7 +356,7 @@ def test_startup_check_fails_running_deploy_without_replica_and_drops_its_route(
     assert blog is not None and blog.status == "failed"
     assert blog.error == "replica is gone"
     assert shop is not None and shop.status == "running"
-    assert routes.applied[-1] == [Route("shop", "10.0.0.5", 30002)]
+    assert routes.applied[-1] == [one_route("shop", "10.0.0.5", 30002)]
 
 
 def test_startup_check_leaves_deploys_of_an_unreachable_node_alone(
@@ -365,12 +365,16 @@ def test_startup_check_leaves_deploys_of_an_unreachable_node_alone(
     agents.list_error = rpc_error(__import__("grpc").StatusCode.UNAVAILABLE)
 
     async def scenario() -> list[str]:
-        await deploys_uow.deploys.add(_running("d-blog", "blog", 30001))
+        await add_running_deploy(deploys_uow, "d-blog", "blog", [("node-a", 30001)])
         return await fail_deploys_without_replica(
-            agents, lambda: deploys_uow, routes, RUNNERS, cast(AppsFacade, FakeApps())
+            agents,
+            lambda: deploys_uow,
+            routes,
+            cast(NodesFacade, agents.nodes),
+            cast(AppsFacade, FakeApps()),
         )
 
     assert asyncio.run(scenario()) == []
     blog = asyncio.run(deploys_uow.deploys.get("d-blog"))
     assert blog is not None and blog.status == "running"
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", 30001)]
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", 30001)]

@@ -8,30 +8,20 @@ import pytest
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.services.reconcile import remove_orphan_replicas
 from app.deploys.uow import InMemoryDeploysUoW
-from app.ingress.routes import Route
 from tests.fakes import (
     HOST_PORT,
     IMAGE_DIGEST,
     IMAGE_REPOSITORY,
     FakeAgentClients,
     FakeRoutes,
+    add_running_deploy,
     make_worker,
+    one_route,
     rpc_error,
     run_deploys,
 )
 
 IMAGE = f"{IMAGE_REPOSITORY}@{IMAGE_DIGEST}"
-
-
-def _ran(deploy_id: str, status: str = "running", app: str = "blog", port: int = 30001):
-    return Deploy(
-        id=deploy_id,
-        app_name=app,
-        status=status,  # pyright: ignore[reportArgumentType]
-        image=IMAGE,
-        node="node-a",
-        host_port=port,
-    )
 
 
 def _get(uow: InMemoryDeploysUoW, deploy_id: str) -> Deploy:
@@ -41,7 +31,7 @@ def _get(uow: InMemoryDeploysUoW, deploy_id: str) -> Deploy:
 
 
 async def _redeploy(uow: InMemoryDeploysUoW, agents: FakeAgentClients, routes, **kw):
-    await uow.deploys.add(_ran("old"))
+    await add_running_deploy(uow, "old", "blog", [("node-a", 30001)], image=IMAGE)
     agents.seed_replica("old-r0", "blog", port=30001)
     await uow.deploys.add(Deploy(id="new", app_name="blog"))
     agents.build_states = ["SUCCEEDED"]
@@ -75,7 +65,7 @@ def test_redeploy_supersedes_the_old_deploy_after_the_route_points_at_the_new_on
     assert old.status == "superseded"
     assert order == ["route", "remove old-r0"]
     assert list(agents.replicas["node-a"]) == ["new-r0"]
-    assert routes.applied[-1] == [Route("blog", "10.0.0.5", HOST_PORT)]
+    assert routes.applied[-1] == [one_route("blog", "10.0.0.5", HOST_PORT)]
 
 
 def test_failed_removal_of_the_old_replica_leaves_the_new_deploy_running(
@@ -101,7 +91,9 @@ def test_redeploy_does_not_touch_other_apps(
     deploys_uow: InMemoryDeploysUoW, agents: FakeAgentClients, routes: FakeRoutes
 ):
     async def scenario() -> None:
-        await deploys_uow.deploys.add(_ran("shop-1", app="shop", port=30002))
+        await add_running_deploy(
+            deploys_uow, "shop-1", "shop", [("node-a", 30002)], image=IMAGE
+        )
         agents.seed_replica("shop-1-r0", "shop", port=30002)
         await _redeploy(deploys_uow, agents, routes)
 
@@ -157,9 +149,13 @@ def test_slow_cleanup_after_the_final_write_is_not_cancelled_by_the_heartbeat(
 
 def _orphan_setup(uow: InMemoryDeploysUoW, agents: FakeAgentClients) -> None:
     async def add() -> None:
-        await uow.deploys.add(_ran("live"))
-        await uow.deploys.add(_ran("old", status="superseded", port=30002))
-        await uow.deploys.add(_ran("halted", status="stopped", port=30003))
+        await add_running_deploy(uow, "live", "blog", [("node-a", 30001)], image=IMAGE)
+        await add_running_deploy(
+            uow, "old", "blog", [("node-a", 30002)], image=IMAGE, status="superseded"
+        )
+        await add_running_deploy(
+            uow, "halted", "blog", [("node-a", 30003)], image=IMAGE, status="stopped"
+        )
         await uow.deploys.add(Deploy(id="busy", app_name="shop", status="starting"))
 
     asyncio.run(add())

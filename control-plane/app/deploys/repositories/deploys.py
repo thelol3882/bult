@@ -7,11 +7,12 @@ A deploy created from an earlier image starts at `starting`. A running deploy en
 Active deploys are the work queue: a worker claims one under a lease.
 """
 
-from dataclasses import dataclass, fields, replace
+from dataclasses import dataclass, field, fields, replace
 from datetime import UTC, datetime, timedelta
 from typing import Literal, Protocol
 
 from app.deploys.errors import DeployInProgressError
+from app.deploys.repositories.replicas import InMemoryReplicaRepository, ReplicaView
 
 DeployStatus = Literal[
     "queued",
@@ -35,24 +36,31 @@ class Deploy:
     status: DeployStatus = "queued"
     commit_sha: str = ""
     image: str = ""  # "repository@digest" once the build succeeded
-    node: str = ""
-    host_port: int = 0
+    desired_replicas: int = 1
+    ran: bool = False  # reached `running` at some point
     error: str = ""  # user-facing
     created_at: datetime | None = None  # set by storage on add
     lease_owner: str = ""  # worker id holding the lease
     lease_until: datetime | None = None
     attempts: int = 0  # claims so far
     source_deploy_id: str = ""  # set when the deploy reuses that deploy's image
+    # Not stored in the deploys table: DeployService fills them in when it reads.
+    ready_replicas: int = 0
+    replicas: tuple[ReplicaView, ...] = field(default=(), repr=False)
 
     @property
     def restorable(self) -> bool:
-        """It has an image and ran at some point (`node` is written together with `running`)."""
-        return bool(self.image) and bool(self.node)
+        """It has an image and ran at some point."""
+        return bool(self.image) and self.ran
 
 
 LEASE_FIELDS = {"lease_owner", "lease_until", "attempts"}
+NOT_STORED = {"ready_replicas", "replicas"}
 UPDATABLE_FIELDS = (
-    {f.name for f in fields(Deploy)} - {"id", "app_name", "created_at"} - LEASE_FIELDS
+    {f.name for f in fields(Deploy)}
+    - {"id", "app_name", "created_at"}
+    - LEASE_FIELDS
+    - NOT_STORED
 )
 # The lease holder may also release the lease and give back the attempt.
 OWNED_FIELDS = UPDATABLE_FIELDS | {"lease_owner", "lease_until", "attempts"}
@@ -111,8 +119,9 @@ class DeployRepository(Protocol):
 class InMemoryDeployRepository:
     """Dict keyed by id; also the test fake. Hands out copies, like rows from a database."""
 
-    def __init__(self) -> None:
+    def __init__(self, replicas: InMemoryReplicaRepository | None = None) -> None:
         self._deploys: dict[str, Deploy] = {}
+        self._replicas = replicas  # emptied together with the deploys, like the cascade
 
     async def add(self, deploy: Deploy) -> Deploy:
         if deploy.id in self._deploys:
@@ -225,6 +234,10 @@ class InMemoryDeployRepository:
         return [replace(d) for d in deploys[:limit]]
 
     async def delete_for_app(self, app_name: str) -> None:
+        if self._replicas is not None:
+            self._replicas.forget_deploys(
+                d.id for d in self._deploys.values() if d.app_name == app_name
+            )
         self._deploys = {
             k: d for k, d in self._deploys.items() if d.app_name != app_name
         }

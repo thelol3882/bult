@@ -21,6 +21,9 @@ from app.auth.uow import SqlAuthUoW
 from app.core.db import create_engine, create_session_factory
 from app.deploys.errors import DeployInProgressError
 from app.deploys.repositories.deploys import Deploy
+from app.deploys.repositories.replicas import Replica
+from app.nodes.repositories.nodes import Node
+from app.nodes.uow import SqlNodesUoW
 from app.deploys.uow import SqlDeploysUoW
 
 pytestmark = pytest.mark.integration
@@ -162,11 +165,11 @@ async def test_update_bumps_updated_at_but_not_created_at(
     created, updated = await read_timestamps(factory, "d1")
 
     async with SqlDeploysUoW(factory) as uow:
-        changed = await uow.deploys.update("d1", status="running", host_port=8080)
+        changed = await uow.deploys.update("d1", status="running", ran=True)
         await uow.commit()
     assert changed is not None
     assert changed.status == "running"
-    assert changed.host_port == 8080
+    assert changed.ran
 
     created_after, updated_after = await read_timestamps(factory, "d1")
     assert created_after == created
@@ -467,7 +470,7 @@ async def test_running_and_restorable_queries(factory: async_sessionmaker):
     await make_app_named(factory, "hello", owner)
     await make_app_named(factory, "other", owner)
     image = "registry/hello@sha256:" + "a" * 64
-    ran = {"image": image, "node": "node-a", "host_port": 1}
+    ran = {"image": image, "ran": True}
 
     # Oldest to newest: a replaced deploy, one that never ran, the running one, another app's.
     await add_deploy(factory, Deploy(id="d1", app_name="hello", status="superseded", **ran))
@@ -550,3 +553,83 @@ async def test_cancel_queued_respects_status_and_live_lease(
     async with SqlDeploysUoW(factory) as uow:
         assert await uow.deploys.cancel_queued("d1", now) is None  # no longer queued
         assert await uow.deploys.claim("w2", LEASE, now) is None  # and not work any more
+
+
+@db_test
+async def test_replicas_roundtrip_counts_and_cascade(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(factory, Deploy(id="d1", app_name="hello", desired_replicas=3))
+
+    async with SqlDeploysUoW(factory) as uow:
+        for index, node in enumerate(["node-a", "node-b", "node-a"]):
+            assert await uow.replicas.save(
+                Replica(f"d1-r{index}", "d1", index, node, 20000 + index)
+            )
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert [r.index for r in await uow.replicas.list_running(["d1"])] == [0, 1, 2]
+        assert await uow.replicas.count_running_by_node() == {"node-a": 2, "node-b": 1}
+        await uow.replicas.mark_removed(["d1-r1"])
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert [r.id for r in await uow.replicas.list_all_running()] == ["d1-r0", "d1-r2"]
+        assert await uow.replicas.count_running_by_node() == {"node-a": 2}
+        # Saving again is an upsert: a replica found on another node moves, and comes back.
+        assert await uow.replicas.save(Replica("d1-r1", "d1", 1, "node-c", 20009))
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        moved = [r for r in await uow.replicas.list_running(["d1"]) if r.index == 1]
+        assert [(r.node, r.host_port) for r in moved] == [("node-c", 20009)]
+        await uow.deploys.delete_for_app("hello")
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.replicas.list_all_running() == []  # the deploy took them along
+
+
+@db_test
+async def test_saving_a_replica_of_a_vanished_deploy_returns_false(
+    factory: async_sessionmaker,
+):
+    async with SqlDeploysUoW(factory) as uow:
+        assert not await uow.replicas.save(Replica("ghost-r0", "ghost", 0, "node-a", 1))
+
+
+@db_test
+async def test_node_upsert_keeps_created_at_and_replaces_the_rest(
+    factory: async_sessionmaker,
+):
+    first_seen = datetime.now(UTC) - timedelta(minutes=5)
+    async with SqlNodesUoW(factory) as uow:
+        first = await uow.nodes.upsert(
+            Node("node-a", "10.0.0.5:50051", "runner", first_seen, "v1", 2, 1 << 31)
+        )
+        await uow.commit()
+    assert first.created_at is not None
+
+    async with SqlNodesUoW(factory) as uow:
+        again = await uow.nodes.upsert(
+            Node("node-a", "10.0.0.9:50051", "both", datetime.now(UTC), "v2", 4, 1 << 32)
+        )
+        await uow.commit()
+
+    async with SqlNodesUoW(factory) as uow:
+        [node] = await uow.nodes.list()
+    assert node.address == "10.0.0.9:50051"
+    assert (node.role, node.version, node.cpus, node.memory_bytes) == ("both", "v2", 4, 1 << 32)
+    assert node.last_seen_at > first_seen
+    assert node.created_at == first.created_at == again.created_at
+
+
+@db_test
+async def test_apps_replicas_are_limited_to_zero_to_five(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+
+    async with SqlAppsUoW(factory) as uow:
+        with pytest.raises(IntegrityError):
+            await uow.apps.update("hello", replicas=6)
