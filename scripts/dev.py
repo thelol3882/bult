@@ -15,6 +15,7 @@ Configuration (environment variables, all optional):
     BULT_NODES         node VMs, space-separated   (default: bult-node-1 bult-node-2 bult-builder)
     BULT_BUILDER_NODE  the build node               (default: bult-builder)
     BULT_REGISTRY      registry address for builds  (default: 192.168.252.1:5050)
+    BULT_CONTROL_PLANE_URL  API as the node VMs reach it (default: http://192.168.252.1:8000)
     BULT_GOARCH        node CPU architecture        (default: this machine's — Multipass VMs match the host)
     BULT_GO_DOCKER=1   build/test the agent in Docker even if `go` is installed
     DATABASE_URL       database for the db-* commands (default: the compose Postgres on localhost)
@@ -29,12 +30,16 @@ the script (`smoke --keep`, `smoke --help`).
 from __future__ import annotations
 
 import argparse
+import hashlib
+import hmac
 import json
 import os
 import platform
+import secrets
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.request
 from pathlib import Path
@@ -73,6 +78,15 @@ DEMO_NODES = os.environ.get("BULT_DEMO_NODES", "bult-node-1 bult-builder").split
 # Volumes `demo-down --wipe` removes: platform state only (registry images and Go caches stay).
 STATE_VOLUMES = ("bult_postgres-data", "bult_ingress-routes")
 REGISTRY = os.environ.get("BULT_REGISTRY", "192.168.252.1:5050")
+# The API on the Multipass bridge (published next to 127.0.0.1 in control-plane/compose.yaml).
+CONTROL_PLANE_URL = os.environ.get("BULT_CONTROL_PLANE_URL", "http://192.168.252.1:8000")
+AGENT_PORT = 50051
+
+# Dev node tokens: HMAC(secret, node name), so they are the same on every run and need no
+# bookkeeping. The secret and the generated compose env file live in the gitignored .bult/.
+BULT_DIR = ROOT / ".bult"
+NODE_SECRET_FILE = BULT_DIR / "node-secret"
+NODE_TOKENS_ENV = BULT_DIR / "node-tokens.env"
 GOARCH = os.environ.get("BULT_GOARCH") or host_goarch()
 
 
@@ -131,6 +145,47 @@ def _run_env(cmd: list[str], env: dict[str, str]) -> None:
     result = subprocess.run(cmd, cwd=AGENT_DIR, env={**os.environ, **env})
     if result.returncode != 0:
         sys.exit(result.returncode)
+
+
+def node_secret() -> bytes:
+    """The local secret node tokens are derived from (created on first use, mode 600)."""
+    if not NODE_SECRET_FILE.exists():
+        BULT_DIR.mkdir(exist_ok=True)
+        NODE_SECRET_FILE.write_text(secrets.token_hex(32))
+        NODE_SECRET_FILE.chmod(0o600)
+    return NODE_SECRET_FILE.read_text().strip().encode()
+
+
+def node_token(name: str) -> str:
+    """The token a node reports with (64 hex characters)."""
+    return hmac.new(node_secret(), f"bult-node:{name}".encode(), hashlib.sha256).hexdigest()
+
+
+def ensure_node_tokens() -> None:
+    """Write BULT_NODE_TOKENS for every node into the env file compose gives to the API."""
+    BULT_DIR.mkdir(exist_ok=True)
+    line = "BULT_NODE_TOKENS=" + ",".join(f"{n}={node_token(n)}" for n in NODES) + "\n"
+    if not NODE_TOKENS_ENV.exists() or NODE_TOKENS_ENV.read_text() != line:
+        NODE_TOKENS_ENV.write_text(line)
+    NODE_TOKENS_ENV.chmod(0o600)
+
+
+def node_ips() -> dict[str, str]:
+    """Node name -> its first IPv4 address, from Multipass."""
+    out = run(["multipass", "list", "--format", "json"], capture=True)
+    return {vm["name"]: vm["ipv4"][0] for vm in json.loads(out)["list"] if vm.get("ipv4")}
+
+
+def node_put_file(node: str, path: str, content: str, mode: str = "600") -> None:
+    """Install a root-owned file on a node without the content ever appearing in a command line."""
+    with tempfile.NamedTemporaryFile("w", suffix=".tmp", delete=False) as tmp:  # created 0600
+        tmp.write(content)
+    try:
+        run(["multipass", "transfer", tmp.name, f"{node}:/tmp/bult-put.tmp"])
+        node_sh(node, f"mkdir -p {os.path.dirname(path)} && "
+                      f"install -m {mode} -o root -g root /tmp/bult-put.tmp {path} && rm -f /tmp/bult-put.tmp")
+    finally:
+        os.unlink(tmp.name)
 
 
 def running_nodes() -> list[str]:
@@ -220,15 +275,29 @@ def cmd_agent_test(_: argparse.Namespace) -> None:
 
 
 def cmd_agent_setup(_: argparse.Namespace) -> None:
-    """Create the bultd user on running nodes and the builder's /etc/bult/bultd.env (idempotent)."""
+    """Create the bultd user on running nodes and write /etc/bult/bultd.env with role, heartbeat and token."""
+    ensure_node_tokens()
+    ips = node_ips()
     for node in running_nodes():
         print(f"-> {node}")
         node_sh(node, "id bultd >/dev/null 2>&1 || useradd --system --no-create-home "
                       "--shell /usr/sbin/nologin --groups docker bultd")
-        if node == BUILDER_NODE:
-            env_line = f"BULTD_ARGS=--role builder --registry {REGISTRY}"
-            node_sh(node, f"mkdir -p /etc/bult && printf '%s\\n' '{env_line}' > /etc/bult/bultd.env")
-            print(f"   {node}: role builder, registry {REGISTRY}")
+        if node not in ips:
+            print(f"!! {node}: no IP address yet, skipped", file=sys.stderr)
+            continue
+        role = "builder" if node == BUILDER_NODE else "runner"
+        args = [f"--role {role}"]
+        if role == "builder":
+            args.append(f"--registry {REGISTRY}")
+        args += [
+            f"--control-plane-url {CONTROL_PLANE_URL}",
+            f"--node-name {node}",
+            f"--advertise-addr {ips[node]}:{AGENT_PORT}",
+        ]
+        env_text = f"BULTD_ARGS={' '.join(args)}\nBULTD_NODE_TOKEN={node_token(node)}\n"
+        node_put_file(node, "/etc/bult/bultd.env", env_text)
+        node_sh(node, "systemctl try-restart bultd || true")  # no-op until the unit is installed
+        print(f"   {node}: role {role}, heartbeat to {CONTROL_PLANE_URL} as {ips[node]}:{AGENT_PORT}")
 
 
 def cmd_agent_deploy(args: argparse.Namespace) -> None:
@@ -276,6 +345,7 @@ def cmd_nodes(_: argparse.Namespace) -> None:
 
 def cmd_up(_: argparse.Namespace) -> None:
     """Start the host stack (registry + control plane) with Docker Compose."""
+    ensure_node_tokens()
     run(["docker", "compose", "up", "-d", "--build"], cwd=ROOT)
 
 
@@ -304,6 +374,7 @@ def cmd_demo_up(_: argparse.Namespace) -> None:
     for node in DEMO_NODES:
         node_sh(node, "systemctl is-active --quiet bultd || systemctl restart bultd")
         print(f"   {node}: bultd active")
+    ensure_node_tokens()
     run(["docker", "compose", "up", "-d", "--build"], cwd=ROOT)
     checks = {"API": "http://localhost:8000/healthz", "dashboard": "http://localhost:3000/"}
     for name, url in checks.items():
