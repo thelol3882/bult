@@ -8,7 +8,7 @@ export interface BultApp {
     subdir: string;
     created_at: string;
     url: string;
-    /** Desired replicas: 0 = stopped, 1 = running. */
+    /** Desired replicas: 0 = stopped, 1 to 5 = running. */
     replicas: number;
     /** Names only: the values are write-only. */
     env_keys: string[];

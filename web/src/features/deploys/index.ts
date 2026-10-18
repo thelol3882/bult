@@ -1,11 +1,14 @@
 export { DeployCard } from './components/DeployCard';
 export { DeployHistory } from './components/DeployHistory';
 export { LogsPanel } from './components/LogsPanel';
+export { ReplicasCard } from './components/ReplicasCard';
 export { useDeployHistory } from './hooks/useDeployHistory';
 export { useDeployPolling } from './hooks/useDeployPolling';
 export { useCancelDeploy } from './hooks/useCancelDeploy';
 export { useRollback } from './hooks/useRollback';
+export { useSetReplicas } from './hooks/useSetReplicas';
 export { useStartApp } from './hooks/useStartApp';
 export { useStartDeploy } from './hooks/useStartDeploy';
 export { useStopApp } from './hooks/useStopApp';
+export { scaleBlockedReason } from './services/replicas';
 export type { Deploy } from './types';

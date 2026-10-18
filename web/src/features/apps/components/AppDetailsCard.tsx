@@ -44,7 +44,9 @@ export function AppDetailsCard({ app }: { app: BultApp }) {
                     {app.replicas === 0 ? (
                         <span className={classes.muted}>Stopped</span>
                     ) : (
-                        <Mono>{app.replicas} replica</Mono>
+                        <Mono>
+                            {app.replicas} {app.replicas === 1 ? 'replica' : 'replicas'}
+                        </Mono>
                     )}
                 </Row>
                 <Row label="Created">{fromNow(app.created_at)}</Row>

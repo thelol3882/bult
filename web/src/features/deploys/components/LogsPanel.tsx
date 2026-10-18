@@ -10,10 +10,18 @@ import classes from './LogsPanel.module.css';
 const TAILS = ['100', '200', '500', '1000'];
 const NEAR_BOTTOM_PX = 40;
 
-/** Output of the running replica; mounted only while its tab is visible, so polling stops with it. */
-export function LogsPanel({ name }: { name: string }) {
+const AUTO = 'auto';
+
+/**
+ * Output of one replica of the running deploy; mounted only while its tab is visible, so
+ * polling stops with it. `replicaCount` is how many replicas the running deploy has.
+ */
+export function LogsPanel({ name, replicaCount = 1 }: { name: string; replicaCount?: number }) {
     const [tail, setTail] = useState('200');
-    const { logs, error, isLoading } = useLogs(name, Number(tail));
+    const [replica, setReplica] = useState(AUTO);
+    // A pick of a replica that no longer exists falls back to the automatic one.
+    const picked = replica !== AUTO && Number(replica) < replicaCount ? Number(replica) : undefined;
+    const { logs, error, isLoading } = useLogs(name, Number(tail), picked);
 
     const viewport = useRef<HTMLPreElement>(null);
     const stickToBottom = useRef(true);
@@ -37,9 +45,26 @@ export function LogsPanel({ name }: { name: string }) {
                 <IconTerminal2 size={18} color="var(--sky-7)" />
                 <h3>Logs</h3>
                 {logs?.deploy_id && (
-                    <Mono className={classes.muted}>{logs.deploy_id.slice(0, 8)}</Mono>
+                    <Mono className={classes.muted}>
+                        {logs.deploy_id.slice(0, 8)}
+                        {logs.replica !== null && ` #${logs.replica}`}
+                    </Mono>
                 )}
                 <span className={classes.spacer} />
+                {replicaCount > 1 && (
+                    <>
+                        <span className={classes.muted}>Replica</span>
+                        <SegmentedControl
+                            size="xs"
+                            data={[
+                                { label: 'Auto', value: AUTO },
+                                ...Array.from({ length: replicaCount }, (_, i) => String(i)),
+                            ]}
+                            value={replica}
+                            onChange={setReplica}
+                        />
+                    </>
+                )}
                 <span className={classes.muted}>Last</span>
                 <SegmentedControl size="xs" data={TAILS} value={tail} onChange={setTail} />
                 <span className={classes.muted}>lines, updates every 3 s</span>

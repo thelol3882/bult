@@ -8,18 +8,23 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { deployListTag, deploysApi, useGetDeployQuery } from '../api/deploysApi';
 
 const POLL_MS = 2000;
+// A running deploy still changes: a node can go unhealthy, a scale adds replicas.
+const RUNNING_POLL_MS = 10_000;
 
-/** Polls a deploy every 2 s until it is running or failed (or no longer exists). */
+/** Polls a deploy every 2 s while it is in progress, every 10 s while it runs, never once final. */
 export function useDeployPolling(name: string, id: string | null) {
     const args = id ? { name, id } : skipToken;
 
-    const finished = useAppSelector((state) => {
+    const pollingInterval = useAppSelector((state) => {
         const { data, error } = deploysApi.endpoints.getDeploy.select(args)(state);
-        if (data) return isDeployFinished(data.status);
-        return error !== undefined && normalizeError(error).status === 404;
+        if (data) {
+            if (data.status === 'running') return RUNNING_POLL_MS;
+            return isDeployFinished(data.status) ? 0 : POLL_MS;
+        }
+        return error !== undefined && normalizeError(error).status === 404 ? 0 : POLL_MS;
     });
 
-    const query = useGetDeployQuery(args, { pollingInterval: finished ? 0 : POLL_MS });
+    const query = useGetDeployQuery(args, { pollingInterval, skipPollingIfUnfocused: true });
 
     // A deploy that just finished changed its neighbours too (a redeploy supersedes the old one).
     const dispatch = useAppDispatch();

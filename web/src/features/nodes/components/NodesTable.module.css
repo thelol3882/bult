@@ -1,0 +1,14 @@
+.card {
+    overflow: hidden;
+    border: 1px solid var(--slate-2);
+    border-radius: var(--radius-lg);
+    background: #fff;
+}
+
+.name {
+    font-weight: 600;
+}
+
+.muted {
+    color: var(--slate-6);
+}

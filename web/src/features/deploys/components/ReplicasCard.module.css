@@ -1,0 +1,35 @@
+.head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--slate-2);
+}
+
+.head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.body {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px;
+}
+
+.value {
+    min-width: 28px;
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.note {
+    margin: 0;
+    padding: 0 20px 16px;
+    color: var(--slate-6);
+    font-size: 12.5px;
+}

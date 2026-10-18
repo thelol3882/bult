@@ -3,9 +3,16 @@ const FORWARDED_RESPONSE_HEADERS = ['content-type', 'x-request-id'];
 
 export const DEFAULT_AFTER_LOGIN = '/apps';
 
-/** Joins the catch-all path onto the API base; null if a segment could escape the base. */
+/** Endpoints for the node agents: not for browsers (and a 401 there must not end the user's session). */
+const INTERNAL_PREFIX = 'internal';
+
+/**
+ * Joins the catch-all path onto the API base; null if a segment could escape the base or the
+ * path is an internal endpoint.
+ */
 export function buildUpstreamUrl(base: string, segments: string[], search: string): string | null {
     if (segments.some((s) => s === '' || s === '.' || s === '..')) return null;
+    if (segments[0] === INTERNAL_PREFIX) return null;
     const path = segments.map(encodeURIComponent).join('/');
     return `${base.replace(/\/+$/, '')}/${path}${search}`;
 }

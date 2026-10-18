@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AppShell } from '@mantine/core';
-import { IconApps, IconChevronRight, IconLogout } from '@tabler/icons-react';
+import { IconApps, IconChevronRight, IconLogout, IconServer } from '@tabler/icons-react';
 import { useLogout } from '@/features/auth';
 import { Logo } from '@/shared/components';
 import classes from './DashboardShell.module.css';
@@ -12,6 +12,7 @@ import classes from './DashboardShell.module.css';
 function crumbsFor(pathname: string): string[] {
     const [, section, rest] = pathname.split('/');
     if (section === 'new') return ['Apps', 'New app'];
+    if (section === 'nodes') return ['Nodes'];
     if (section !== 'apps' || !rest) return ['Apps'];
     return ['Apps', decodeURIComponent(rest)];
 }
@@ -38,6 +39,14 @@ export function DashboardShell({ children, email }: { children: ReactNode; email
                     <Link href="/apps" className={classes.link} data-active={isApps || undefined}>
                         <IconApps size={18} stroke={1.75} />
                         Apps
+                    </Link>
+                    <Link
+                        href="/nodes"
+                        className={classes.link}
+                        data-active={pathname.startsWith('/nodes') || undefined}
+                    >
+                        <IconServer size={18} stroke={1.75} />
+                        Nodes
                     </Link>
                 </nav>
                 <div className={classes.user}>

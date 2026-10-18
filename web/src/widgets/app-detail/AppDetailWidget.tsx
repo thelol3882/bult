@@ -25,10 +25,13 @@ import {
     DeployCard,
     DeployHistory,
     LogsPanel,
+    ReplicasCard,
+    scaleBlockedReason,
     useDeployHistory,
     useDeployPolling,
     useCancelDeploy,
     useRollback,
+    useSetReplicas,
     useStartApp,
     useStartDeploy,
     useStopApp,
@@ -48,6 +51,7 @@ export function AppDetailWidget({ name }: { name: string }) {
     const { deploy, isStarting } = useStartDeploy();
     const { startApp, isStarting: isRestarting } = useStartApp();
     const confirmStop = useStopApp();
+    const { scale, isScaling } = useSetReplicas();
     const history = useDeployHistory(name);
     // Without ?deploy= show the newest deploy, so the card survives a page refresh.
     const selectedId = deployId ?? history.deploys[0]?.id ?? null;
@@ -73,6 +77,16 @@ export function AppDetailWidget({ name }: { name: string }) {
 
     // Start needs an image from a deploy that ran; more history pages may still hold one.
     const hasImageToStart = deploys.some((d) => d.restorable) || history.hasMore;
+    // Indices can have gaps after a failed replica, so the highest index sets the selector's size.
+    const runningReplicas = Math.max(
+        1,
+        ...(deploys.find((d) => d.status === 'running')?.replicas ?? []).map((r) => r.index + 1),
+    );
+
+    const handleScale = async (replicas: number) => {
+        const id = await scale(name, replicas);
+        if (id) await setDeployId(id);
+    };
 
     if (isLoading) {
         return (
@@ -193,6 +207,21 @@ export function AppDetailWidget({ name }: { name: string }) {
                     <div className={classes.grid}>
                         <div className={classes.stack}>
                             <AppDetailsCard app={app} />
+                            <ReplicasCard
+                                name={app.name}
+                                replicas={app.replicas}
+                                blockedReason={
+                                    history.isLoading
+                                        ? 'Loading deploys…'
+                                        : scaleBlockedReason({
+                                              newestStatus: deploys[0]?.status,
+                                              current: app.replicas,
+                                              hasImageToStart,
+                                          })
+                                }
+                                isScaling={isScaling}
+                                onApply={handleScale}
+                            />
                             <EnvCard app={app} />
                         </div>
                         {selectedId || history.isLoading ? (
@@ -229,7 +258,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                 </Tabs.Panel>
 
                 <Tabs.Panel value="logs">
-                    <LogsPanel name={app.name} />
+                    <LogsPanel name={app.name} replicaCount={runningReplicas} />
                 </Tabs.Panel>
             </Tabs>
             <EditAppModal app={app} opened={editOpened} onClose={editHandlers.close} />

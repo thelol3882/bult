@@ -18,6 +18,13 @@ describe('buildUpstreamUrl', () => {
         expect(buildUpstreamUrl('http://api:8000', ['apps', '..', 'auth'], '')).toBeNull();
         expect(buildUpstreamUrl('http://api:8000', ['apps', ''], '')).toBeNull();
     });
+
+    it('does not forward the internal endpoints of the node agents', () => {
+        expect(
+            buildUpstreamUrl('http://api:8000', ['internal', 'nodes', 'heartbeat'], ''),
+        ).toBeNull();
+        expect(buildUpstreamUrl('http://api:8000', ['nodes'], '')).toBe('http://api:8000/nodes');
+    });
 });
 
 describe('buildUpstreamHeaders', () => {

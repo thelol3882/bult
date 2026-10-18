@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Alert, Button, Card, Loader } from '@mantine/core';
+import { Alert, Badge, Button, Card, Loader } from '@mantine/core';
 import {
     IconAlertCircle,
     IconCloudUpload,
@@ -10,6 +10,7 @@ import { isDeployCancellable } from '@/shared/types';
 import type { ApiError } from '@/shared/api';
 import { IdText, Mono, StatusBadge } from '@/shared/components';
 import { shortDigest, shortSha } from '@/shared/utils/digest';
+import { formatReplicas } from '../services/replicas';
 import type { Deploy } from '../types';
 import classes from './DeployCard.module.css';
 
@@ -75,11 +76,32 @@ export function DeployCard({ deploy, error, isLoading, appUrl, onCancel }: Deplo
                                 </span>
                             </Row>
                         )}
-                        <Row label="Node">{deploy.node || <Pending />}</Row>
-                        <Row label="Host port">
-                            {deploy.host_port ? <Mono>{deploy.host_port}</Mono> : <Pending />}
+                        <Row label="Replicas">
+                            <Mono>
+                                {formatReplicas(deploy.ready_replicas, deploy.desired_replicas)}
+                            </Mono>
+                            <span className={classes.muted}>&nbsp;ready</span>
                         </Row>
                     </dl>
+                    {deploy.replicas.length > 0 && (
+                        <ul className={classes.replicas} aria-label="Replicas">
+                            {deploy.replicas.map((r) => (
+                                <li key={r.index}>
+                                    <Mono>#{r.index}</Mono>
+                                    <Mono>
+                                        {r.node}:{r.host_port}
+                                    </Mono>
+                                    <Badge
+                                        size="sm"
+                                        variant="light"
+                                        color={r.status === 'running' ? 'green' : 'red'}
+                                    >
+                                        {r.status === 'running' ? 'Running' : 'Node not reporting'}
+                                    </Badge>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
                     {deploy.status === 'running' && appUrl && (
                         <div className={classes.open}>
                             <Button

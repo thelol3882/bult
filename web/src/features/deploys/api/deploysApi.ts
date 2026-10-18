@@ -1,6 +1,6 @@
 import { baseApi } from '@/shared/api';
 import type { CursorPage } from '@/shared/types';
-import type { AppLogs, Deploy, DeployArgs } from '../types';
+import type { AppLogs, Deploy, DeployArgs, ReplicasResult, SetReplicasArgs } from '../types';
 
 export const HISTORY_PAGE_SIZE = 20;
 
@@ -29,6 +29,18 @@ export const deploysApi = baseApi.injectEndpoints({
                 deployListTag(name),
             ],
         }),
+        setReplicas: build.mutation<ReplicasResult, SetReplicasArgs>({
+            query: ({ name, replicas }) => ({
+                url: `/apps/${encodeURIComponent(name)}/replicas`,
+                method: 'PUT',
+                body: { replicas },
+            }),
+            // The deploy list tag also refetches the polled deploy (its replicas changed).
+            invalidatesTags: (_result, _error, { name }) => [
+                { type: 'App', id: name },
+                deployListTag(name),
+            ],
+        }),
         cancelDeploy: build.mutation<Deploy, DeployArgs>({
             query: ({ name, id }) => ({
                 url: `/apps/${encodeURIComponent(name)}/deploys/${encodeURIComponent(id)}/cancel`,
@@ -50,8 +62,12 @@ export const deploysApi = baseApi.injectEndpoints({
                 deployListTag(name),
             ],
         }),
-        getLogs: build.query<AppLogs, { name: string; tail: number }>({
-            query: ({ name, tail }) => `/apps/${encodeURIComponent(name)}/logs?tail=${tail}`,
+        getLogs: build.query<AppLogs, { name: string; tail: number; replica?: number }>({
+            query: ({ name, tail, replica }) => {
+                const params = new URLSearchParams({ tail: String(tail) });
+                if (replica !== undefined) params.set('replica', String(replica));
+                return `/apps/${encodeURIComponent(name)}/logs?${params}`;
+            },
         }),
         getDeployHistory: build.infiniteQuery<CursorPage<Deploy>, string, string | null>({
             infiniteQueryOptions: {
@@ -81,6 +97,7 @@ export const {
     useStartDeployMutation,
     useStopAppMutation,
     useStartAppMutation,
+    useSetReplicasMutation,
     useCancelDeployMutation,
     useRollbackDeployMutation,
     useGetLogsQuery,

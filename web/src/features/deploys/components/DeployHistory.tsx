@@ -5,6 +5,7 @@ import type { ApiError } from '@/shared/api';
 import { Mono, StatusBadge } from '@/shared/components';
 import { shortSha } from '@/shared/utils/digest';
 import { fromNow } from '@/shared/utils/date';
+import { formatReplicas } from '../services/replicas';
 import type { Deploy } from '../types';
 import classes from './DeployHistory.module.css';
 
@@ -85,9 +86,10 @@ export function DeployHistory({
                                 <Mono>{d.commit_sha ? shortSha(d.commit_sha) : '-'}</Mono>
                                 <span className={classes.muted}>{fromNow(d.created_at)}</span>
                                 <span className={classes.where}>
-                                    {d.node && d.host_port ? (
+                                    {d.status === 'running' ? (
                                         <Mono>
-                                            {d.node}:{d.host_port}
+                                            {formatReplicas(d.ready_replicas, d.desired_replicas)}{' '}
+                                            replicas
                                         </Mono>
                                     ) : null}
                                 </span>
