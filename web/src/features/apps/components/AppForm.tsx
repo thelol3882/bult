@@ -58,6 +58,7 @@ export function AppForm() {
                             data={[
                                 { label: 'fastapi', value: 'fastapi' },
                                 { label: 'express', value: 'express' },
+                                { label: 'static', value: 'static' },
                             ]}
                             {...form.getInputProps('preset')}
                         />

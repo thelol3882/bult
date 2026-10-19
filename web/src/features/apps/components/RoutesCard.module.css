@@ -1,0 +1,50 @@
+.head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 20px;
+    border-bottom: 1px solid var(--slate-2);
+}
+
+.head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.empty {
+    margin: 0;
+    padding: 20px;
+    color: var(--slate-6);
+    font-size: 13px;
+}
+
+.list {
+    margin: 0;
+    padding: 6px 20px;
+    list-style: none;
+}
+
+.list li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    border-bottom: 1px dashed var(--slate-2);
+    font-size: 13px;
+}
+
+.list li:last-child {
+    border-bottom: 0;
+}
+
+.arrow {
+    color: var(--slate-5);
+}
+
+.note {
+    margin: 0;
+    padding: 0 20px 14px;
+    color: var(--slate-6);
+    font-size: 12px;
+}

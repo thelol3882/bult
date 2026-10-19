@@ -1,4 +1,10 @@
-export type Preset = 'fastapi' | 'express';
+export type Preset = 'fastapi' | 'express' | 'static';
+
+/** `path` of the app's own domain is served by the app `app` (the path is passed on unchanged). */
+export interface AppRoute {
+    path: string;
+    app: string;
+}
 
 export interface BultApp {
     name: string;
@@ -12,6 +18,7 @@ export interface BultApp {
     replicas: number;
     /** Names only: the values are write-only. */
     env_keys: string[];
+    routes: AppRoute[];
 }
 
 export interface AppCreate {

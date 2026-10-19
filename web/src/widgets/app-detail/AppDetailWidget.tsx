@@ -17,6 +17,7 @@ import {
     AppDetailsCard,
     EditAppModal,
     EnvCard,
+    RoutesCard,
     useDeleteApp,
     useGetAppQuery,
 } from '@/features/apps';
@@ -223,6 +224,7 @@ export function AppDetailWidget({ name }: { name: string }) {
                                 onApply={handleScale}
                             />
                             <EnvCard app={app} />
+                            <RoutesCard app={app} />
                         </div>
                         {selectedId || history.isLoading ? (
                             <DeployCard
