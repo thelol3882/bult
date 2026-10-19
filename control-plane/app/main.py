@@ -9,7 +9,7 @@ from fastapi import FastAPI
 
 from app import health
 from app.agents.client import AgentClients
-from app.apps.events import AppDeleted
+from app.apps.events import AppDeleted, AppRoutesChanged
 from app.apps.public import AppsFacade, build_apps_facade
 from app.apps.routers import apps as apps_router
 from app.apps.uow import sql_apps_uow_factory
@@ -27,6 +27,7 @@ from app.deploys import handlers as deploys_handlers
 from app.deploys.deps import build_deploy_service
 from app.deploys.routers import deploys as deploys_router
 from app.deploys.routers import lifecycle as lifecycle_router
+from app.deploys.services.deploys import DeployService
 from app.deploys.services.reconcile import (
     fail_deploys_without_replica,
     remove_orphan_replicas,
@@ -59,7 +60,9 @@ async def lifespan(app: FastAPI):
     app.state.nodes = NodesFacade(app.state.node_service)
 
     app.state.agents = AgentClients(app.state.nodes)
-    app.state.routes = RouteWriter(Path(settings.ingress_dir), settings.apps_domain)
+    app.state.routes = RouteWriter(
+        Path(settings.ingress_dir), settings.apps_domain, settings.lb_algorithm
+    )
 
     app.state.apps_uow_factory = sql_apps_uow_factory(session_factory)
 
@@ -148,9 +151,7 @@ async def _startup_check(app: FastAPI) -> None:
             state.nodes,
             apps,
         )
-        removed = await remove_orphan_replicas(
-            state.agents, state.deploys_uow_factory
-        )
+        removed = await remove_orphan_replicas(state.agents, state.deploys_uow_factory)
     except Exception:
         logger.exception("startup check failed")
         return
@@ -164,10 +165,9 @@ def _build_event_bus(app: FastAPI) -> EventBus:
     """Wire subscriptions; the service is built from app.state when an event arrives."""
     bus = EventBus()
 
-    async def on_app_deleted(event: AppDeleted) -> None:
+    def deploys_service() -> DeployService:
         state = app.state
-
-        deploys = build_deploy_service(
+        return build_deploy_service(
             state.deploys_uow_factory,
             build_apps_facade(
                 uow_factory=state.apps_uow_factory,
@@ -179,9 +179,15 @@ def _build_event_bus(app: FastAPI) -> EventBus:
             state.routes,
             state.settings,
         )
-        await deploys_handlers.on_app_deleted(event, deploys)
+
+    async def on_app_deleted(event: AppDeleted) -> None:
+        await deploys_handlers.on_app_deleted(event, deploys_service())
+
+    async def on_app_routes_changed(event: AppRoutesChanged) -> None:
+        await deploys_handlers.on_app_routes_changed(event, deploys_service())
 
     bus.subscribe(AppDeleted, on_app_deleted)
+    bus.subscribe(AppRoutesChanged, on_app_routes_changed)
     return bus
 
 

@@ -9,6 +9,14 @@ from uuid_utils.compat import uuid7
 
 
 @dataclass(frozen=True)
+class AppRoute:
+    """`path` of the app's domain is served by the app `app`."""
+
+    path: str  # '/api', no trailing slash
+    app: str
+
+
+@dataclass(frozen=True)
 class App:
     """An app as the domain sees it."""
 
@@ -23,6 +31,7 @@ class App:
     replicas: int = 1  # desired state: 0 = stopped, 1..5 = running
     # Secret values: kept out of repr so they cannot reach a log line.
     env: dict[str, str] = field(default_factory=dict, repr=False)
+    routes: tuple[AppRoute, ...] = ()
 
 
 class AppRepository(Protocol):
@@ -34,6 +43,13 @@ class AppRepository(Protocol):
     async def count(self, owner_id: UUID) -> int: ...
     async def list_stopped(self) -> list[str]:
         """Names of the apps with replicas == 0."""
+        ...
+    async def set_routes(self, name: str, routes: tuple[AppRoute, ...]) -> App | None: ...
+    async def list_routes(self) -> dict[str, tuple[AppRoute, ...]]:
+        """Path routes of every app that has any, by app name."""
+        ...
+    async def remove_routes_to(self, target: str) -> None:
+        """Drop every route (of any app) that points at `target`."""
         ...
     async def list(self, owner_id: UUID, offset: int, limit: int) -> list[App]: ...
     async def delete(self, name: str) -> bool:
@@ -63,6 +79,18 @@ class InMemoryAppRepository:
         updated_app = replace(app, **changes)
         self._apps[name] = updated_app
         return updated_app
+
+    async def set_routes(self, name: str, routes: tuple[AppRoute, ...]) -> App | None:
+        return await self.update(name, routes=routes)
+
+    async def list_routes(self) -> dict[str, tuple[AppRoute, ...]]:
+        return {a.name: a.routes for a in self._apps.values() if a.routes}
+
+    async def remove_routes_to(self, target: str) -> None:
+        for app in list(self._apps.values()):
+            kept = tuple(r for r in app.routes if r.app != target)
+            if kept != app.routes:
+                self._apps[app.name] = replace(app, routes=kept)
 
     def _owned(self, owner_id: UUID) -> list[App]:
         return [a for a in self._apps.values() if a.owner_id == owner_id]

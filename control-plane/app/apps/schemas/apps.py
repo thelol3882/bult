@@ -9,10 +9,13 @@ from pydantic import (
     ConfigDict,
     Field,
     HttpUrl,
+    RootModel,
     field_validator,
 )
 
 from app.apps.repositories.apps import App
+
+Preset = Literal["fastapi", "express", "static"]
 
 # Platform-owned names that must not become app subdomains.
 RESERVED_NAMES: frozenset[str] = frozenset({"api", "www", "admin", "registry"})
@@ -66,10 +69,53 @@ class EnvUpdate(BaseModel):
         return env
 
 
+ROUTE_PATH_REGEX = re.compile(r"^/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$")
+MAX_ROUTES = 5
+
+
+class RouteIn(BaseModel):
+    """One path route: `path` of this app's domain goes to the app `app`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    path: Annotated[str, Field(max_length=100)]
+    app: Annotated[str, Field(pattern=DNS_LABEL_REGEX)]
+
+    @field_validator("path")
+    @classmethod
+    def validate_path(cls, value: str) -> str:
+        path = value.removesuffix("/")  # stored without it: '/api/' == '/api'
+        if not ROUTE_PATH_REGEX.fullmatch(path):
+            raise ValueError(
+                "Use lowercase letters, digits, '-' and '_' in segments, e.g. '/api' "
+                "or '/api/v1'; '/' alone is the app itself."
+            )
+        return path
+
+
+class RoutesUpdate(RootModel[list[RouteIn]]):
+    """Request body of PUT /apps/{name}/routes: the complete list of path routes."""
+
+    @field_validator("root")
+    @classmethod
+    def validate_routes(cls, routes: list[RouteIn]) -> list[RouteIn]:
+        if len(routes) > MAX_ROUTES:
+            raise ValueError(f"At most {MAX_ROUTES} routes are allowed.")
+        paths = [r.path for r in routes]
+        if len(set(paths)) != len(paths):
+            raise ValueError("Paths must be unique.")
+        return routes
+
+
+class RouteOut(BaseModel):
+    path: str
+    app: str
+
+
 class AppUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    preset: Literal["fastapi", "express"] | None = None
+    preset: Preset | None = None
     repo_url: HttpUrl | None = None
     branch: str | None = None
     subdir: str | None = None
@@ -102,7 +148,7 @@ class AppCreate(BaseModel):
             description="DNS-compliant label used as the subdomain",
         ),
     ]
-    preset: Literal["fastapi", "express"]
+    preset: Preset
     repo_url: HttpUrl
     branch: str = "main"
     subdir: str = ""
@@ -136,7 +182,7 @@ class AppOut(BaseModel):
     """An app as the API returns it."""
 
     name: str
-    preset: Literal["fastapi", "express"]
+    preset: Preset
     repo_url: str
     branch: str
     subdir: str
@@ -144,6 +190,7 @@ class AppOut(BaseModel):
     url: str  # built by AppService.url
     replicas: int
     env_keys: list[str]  # names only: the values are write-only
+    routes: list[RouteOut]
 
     @classmethod
     def from_app(cls, app: App, url: str) -> "AppOut":
@@ -157,4 +204,5 @@ class AppOut(BaseModel):
             url=url,
             replicas=app.replicas,
             env_keys=sorted(app.env),
+            routes=[RouteOut(path=r.path, app=r.app) for r in app.routes],
         )

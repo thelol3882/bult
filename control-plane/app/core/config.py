@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     ingress_dir: str = "/routes"  # BULT_INGRESS_DIR
     apps_scheme: Literal["http", "https"] = "http"  # ingress serves plain HTTP today
     apps_domain: str = "bult.localhost"  # apps live at <name>.<apps_domain>
+    # BULT_LB_ALGORITHM: how the ingress picks a replica (round_robin = nginx default).
+    lb_algorithm: Literal["round_robin", "least_conn", "ip_hash"] = "round_robin"
     database_url: str = Field(validation_alias="DATABASE_URL")
     jwt_secret: SecretStr = Field(min_length=32)
     jwt_ttl_seconds: int = 86400

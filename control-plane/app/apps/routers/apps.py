@@ -1,11 +1,11 @@
-"""Apps resource: create, list, get, update, env, delete."""
+"""Apps resource: create, list, get, update, env, routes, delete."""
 
 from typing import Annotated
 
 from fastapi import APIRouter, Query, status
 
 from app.apps.deps import AppServiceDep
-from app.apps.schemas.apps import AppCreate, AppOut, AppUpdate, EnvUpdate
+from app.apps.schemas.apps import AppCreate, AppOut, AppUpdate, EnvUpdate, RoutesUpdate
 from app.auth.deps import CurrentUser
 from app.core.pagination import Page, PageParams
 
@@ -34,6 +34,15 @@ async def set_env(
 ) -> AppOut:
     """Replace the app's variables; the response lists the names only."""
     app = await service.set_env(name, payload, user)
+    return AppOut.from_app(app, service.url(app))
+
+
+@router.put("/{name}/routes", response_model=AppOut)
+async def set_routes(
+    payload: RoutesUpdate, name: str, service: AppServiceDep, user: CurrentUser
+) -> AppOut:
+    """Replace the app's path routes: `[{"path": "/api", "app": "shop-api"}]`."""
+    app = await service.set_routes(name, payload, user)
     return AppOut.from_app(app, service.url(app))
 
 

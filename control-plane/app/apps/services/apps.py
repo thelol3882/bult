@@ -2,10 +2,15 @@
 
 from collections.abc import Callable
 
-from app.apps.errors import AppForbiddenError, AppNameTakenError, AppNotFoundError
-from app.apps.events import AppDeleted
-from app.apps.repositories.apps import App
-from app.apps.schemas.apps import AppCreate, AppUpdate, EnvUpdate
+from app.apps.errors import (
+    AppForbiddenError,
+    AppNameTakenError,
+    AppNotFoundError,
+    RouteToSelfError,
+)
+from app.apps.events import AppDeleted, AppRoutesChanged
+from app.apps.repositories.apps import App, AppRoute
+from app.apps.schemas.apps import AppCreate, AppUpdate, EnvUpdate, RoutesUpdate
 from app.apps.uow import AppsUoW
 from app.core.config import MAX_REPLICAS, Settings
 from app.core.events import EventPublisher
@@ -80,6 +85,28 @@ class AppService:
             raise ValueError(f"replicas must be 0..{MAX_REPLICAS}, got {replicas}")
         return await self._change(name, principal, replicas=replicas)
 
+    async def set_routes(self, name: str, data: RoutesUpdate, principal: Principal) -> App:
+        """Replace the path routes; every target must be another app of the same owner."""
+        async with self._uow_factory() as uow:
+            await self._owned(uow, name, principal)
+            routes = tuple(AppRoute(path=r.path, app=r.app) for r in data.root)
+            for route in routes:
+                if route.app == name:
+                    raise RouteToSelfError(name)
+                # Ownership of the target: another user's backend must not be put under our domain.
+                await self._owned(uow, route.app, principal)
+            result = await uow.apps.set_routes(name, routes)
+            if result is None:
+                raise AppNotFoundError(name)
+            await uow.commit()
+            self._events.publish(AppRoutesChanged(name))
+            return result
+
+    async def path_routes(self) -> dict[str, tuple[AppRoute, ...]]:
+        """System read for the route generator: the path routes of every app that has any."""
+        async with self._uow_factory() as uow:
+            return await uow.apps.list_routes()
+
     async def stopped_names(self) -> list[str]:
         """Names of the stopped apps (system read for the route generator)."""
         async with self._uow_factory() as uow:
@@ -109,6 +136,7 @@ class AppService:
             await self._owned(uow, name, principal)
             if not await uow.apps.delete(name):
                 raise AppNotFoundError(name)
+            await uow.apps.remove_routes_to(name)
             await uow.commit()
             self._events.publish(AppDeleted(name))
 

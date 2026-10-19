@@ -13,7 +13,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.apps.errors import AppNameTakenError
-from app.apps.repositories.apps import App
+from app.apps.repositories.apps import App, AppRoute
 from app.apps.uow import SqlAppsUoW
 from app.auth.errors import EmailTakenError
 from app.auth.repositories.users import User
@@ -462,6 +462,36 @@ async def test_app_env_and_replicas_roundtrip_and_list_stopped(
         assert (beta.replicas, beta.env) == (0, {"API_KEY": "s3cret"})
         assert await uow.apps.list_stopped() == ["beta"]
         assert "s3cret" not in repr(beta)
+
+
+@db_test
+async def test_app_routes_roundtrip_list_and_removal(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    for name in ("shop", "shop-api", "shop-img", "blog"):
+        await make_app_named(factory, name, owner)
+
+    async with SqlAppsUoW(factory) as uow:
+        shop = await uow.apps.get("shop")
+        assert shop is not None and shop.routes == ()
+        assert await uow.apps.list_routes() == {}
+        updated = await uow.apps.set_routes(
+            "shop", (AppRoute("/api", "shop-api"), AppRoute("/img", "shop-img"))
+        )
+        assert updated is not None and len(updated.routes) == 2
+        await uow.apps.set_routes("blog", (AppRoute("/api", "shop-api"),))
+        assert await uow.apps.set_routes("ghost", ()) is None
+        await uow.commit()
+
+    async with SqlAppsUoW(factory) as uow:
+        assert await uow.apps.list_routes() == {
+            "shop": (AppRoute("/api", "shop-api"), AppRoute("/img", "shop-img")),
+            "blog": (AppRoute("/api", "shop-api"),),
+        }
+        await uow.apps.remove_routes_to("shop-api")
+        await uow.commit()
+
+    async with SqlAppsUoW(factory) as uow:
+        assert await uow.apps.list_routes() == {"shop": (AppRoute("/img", "shop-img"),)}
 
 
 @db_test

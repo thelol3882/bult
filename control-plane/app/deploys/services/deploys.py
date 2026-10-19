@@ -22,7 +22,7 @@ from app.core.principal import Principal
 from app.deploys.errors import DeployInProgressError
 from app.deploys.repositories.deploys import ACTIVE_STATUSES, Deploy
 from app.deploys.repositories.replicas import Replica, ReplicaView
-from app.deploys.services.routing import current_routes, stopped_apps
+from app.deploys.services.routing import current_routes, routing_state
 from app.deploys.services.runner import place_replicas, remove_replica_quietly
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter
@@ -436,7 +436,7 @@ class DeployService:
             async with self._uow_factory() as uow:
                 desired = await current_routes(uow, self._nodes)
             try:
-                stopped = await stopped_apps(self._apps, desired)
+                desired, stopped = await routing_state(self._apps, desired)
                 gen = self._routes.apply(desired, stopped)
                 await self._routes.wait_applied(gen)
             except (RouteApplyError, TimeoutError) as e:

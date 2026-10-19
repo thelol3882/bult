@@ -16,6 +16,7 @@ class ErrorCode(StrEnum):
     # apps
     APP_NOT_FOUND = "app_not_found"
     APP_NAME_TAKEN = "app_name_taken"
+    ROUTE_TO_SELF = "route_to_self"
 
     # deploys
     DEPLOY_NOT_FOUND = "deploy_not_found"

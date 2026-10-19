@@ -96,3 +96,21 @@ def test_a_malformed_node_token_entry_is_rejected(base_env: pytest.MonkeyPatch):
 
     with pytest.raises(ValidationError):
         Settings()  # pyright: ignore[reportCallIssue]
+
+
+def test_lb_algorithm_defaults_to_round_robin_and_rejects_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setenv("BULT_BUILDER", "b:1")
+    monkeypatch.setenv("BULT_RUNNERS", "n1=10.0.0.5:50051")
+    monkeypatch.setenv("BULT_TRUSTED_PROXY", "10.0.0.1")
+    monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://test/test")
+    monkeypatch.setenv("BULT_JWT_SECRET", "s" * 32)
+
+    assert Settings().lb_algorithm == "round_robin"  # pyright: ignore[reportCallIssue]
+    monkeypatch.setenv("BULT_LB_ALGORITHM", "least_conn")
+    assert Settings().lb_algorithm == "least_conn"  # pyright: ignore[reportCallIssue]
+
+    monkeypatch.setenv("BULT_LB_ALGORITHM", "random")
+    with pytest.raises(ValidationError):
+        Settings()  # pyright: ignore[reportCallIssue]

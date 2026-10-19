@@ -1,5 +1,10 @@
 from app.core.error_codes import ErrorCode
-from app.core.errors import ConflictError, ForbiddenError, NotFoundError
+from app.core.errors import (
+    ConflictError,
+    ForbiddenError,
+    NotFoundError,
+    UnprocessableError,
+)
 
 
 class AppNameTakenError(ConflictError):
@@ -27,3 +32,12 @@ class AppForbiddenError(ForbiddenError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"You do not have access to app '{name}'.")
+
+
+class RouteToSelfError(UnprocessableError):
+    """A path route that points at the app itself."""
+
+    code = ErrorCode.ROUTE_TO_SELF
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"App '{name}' cannot route a path to itself.", field="routes")

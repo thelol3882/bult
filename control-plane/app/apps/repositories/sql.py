@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.apps.errors import AppNameTakenError
 from app.apps.models.apps import AppModel
-from app.apps.repositories.apps import App
+from app.apps.repositories.apps import App, AppRoute
 
 
 class SqlAppRepository:
@@ -53,6 +53,31 @@ class SqlAppRepository:
             return None
 
         return _to_domain(updated_row)
+
+    async def set_routes(self, name: str, routes: tuple[AppRoute, ...]) -> App | None:
+        row = await self._session.scalar(
+            update(AppModel)
+            .where(AppModel.name == name)
+            .values(routes=[{"path": r.path, "app": r.app} for r in routes])
+            .returning(AppModel)
+        )
+        return None if row is None else _to_domain(row)
+
+    async def list_routes(self) -> dict[str, tuple[AppRoute, ...]]:
+        rows = await self._session.execute(
+            select(AppModel.name, AppModel.routes).where(
+                func.jsonb_array_length(AppModel.routes) > 0
+            )
+        )
+        return {name: _routes_to_domain(routes) for name, routes in rows.all()}
+
+    async def remove_routes_to(self, target: str) -> None:
+        rows = await self._session.scalars(
+            select(AppModel).where(AppModel.routes.contains([{"app": target}]))
+        )
+        for row in rows.all():
+            row.routes = [r for r in row.routes if r["app"] != target]
+        await self._session.flush()
 
     async def count(self, owner_id: UUID) -> int:
         result = await self._session.execute(
@@ -101,4 +126,9 @@ def _to_domain(row: AppModel) -> App:
         created_at=row.created_at,
         replicas=row.replicas,
         env=dict(row.env),
+        routes=_routes_to_domain(row.routes),
     )
+
+
+def _routes_to_domain(routes: list[dict[str, str]]) -> tuple[AppRoute, ...]:
+    return tuple(AppRoute(path=r["path"], app=r["app"]) for r in routes)

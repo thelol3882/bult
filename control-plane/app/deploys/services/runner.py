@@ -24,7 +24,7 @@ from app.agents.client import (
 from app.apps.services.facade import App, AppNotFoundError, AppsFacade
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.repositories.replicas import Replica, replica_id
-from app.deploys.services.routing import current_routes, node_maps, stopped_apps
+from app.deploys.services.routing import current_routes, node_maps, routing_state
 from app.deploys.services.scheduler import NoRunnersError, pick_node
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter, route_for
@@ -374,7 +374,9 @@ async def _publish_and_finish(
             else:
                 desired = [*others, this_route]
                 try:
-                    stopped = await stopped_apps(ctx.apps, desired, deploy.app_name)
+                    desired, stopped = await routing_state(
+                        ctx.apps, desired, deploy.app_name
+                    )
                     gen = ctx.routes.apply(desired, stopped)
                     await ctx.routes.wait_applied(gen)
                 except (RouteApplyError, TimeoutError) as e:

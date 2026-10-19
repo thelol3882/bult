@@ -2,7 +2,7 @@
 
 from app.apps.services.facade import AppsFacade
 from app.deploys.uow import DeploysUoW
-from app.ingress.routes import Route, node_ip, running_routes
+from app.ingress.routes import PathRoute, Route, node_ip, running_routes, with_paths
 from app.nodes.services.facade import NodesFacade
 
 
@@ -41,3 +41,15 @@ async def stopped_apps(
         for name in await apps.stopped_app_names()
         if name not in live and name != skip_app
     ]
+
+
+async def routing_state(
+    apps: AppsFacade, routes: list[Route], skip_app: str | None = None
+) -> tuple[list[Route], list[str]]:
+    """What the ingress should get: the routes with their apps' path routes attached,
+    and the stopped apps (see stopped_apps)."""
+    path_routes = {
+        name: [PathRoute(r.path, r.app) for r in app_routes]
+        for name, app_routes in (await apps.path_routes()).items()
+    }
+    return with_paths(routes, path_routes), await stopped_apps(apps, routes, skip_app)

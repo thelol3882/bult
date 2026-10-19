@@ -9,7 +9,7 @@ from app.agents.client import Agents
 from app.apps.services.facade import AppsFacade
 from app.deploys.repositories.deploys import ACTIVE_STATUSES
 from app.deploys.repositories.replicas import replica_id
-from app.deploys.services.routing import current_routes, stopped_apps
+from app.deploys.services.routing import current_routes, routing_state
 from app.deploys.services.runner import list_replicas_by_node, remove_replica_quietly
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter
@@ -68,7 +68,8 @@ async def fail_deploys_without_replica(
         async with uow_factory() as uow:
             desired = await current_routes(uow, nodes, ignore_health=True)
         try:
-            gen = routes.apply(desired, await stopped_apps(apps, desired))
+            desired, stopped = await routing_state(apps, desired)
+            gen = routes.apply(desired, stopped)
             await routes.wait_applied(gen)
         except (RouteApplyError, TimeoutError) as e:
             logger.warning("startup check: route update failed: %r", e)

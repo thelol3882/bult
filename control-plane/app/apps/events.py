@@ -8,3 +8,10 @@ class AppDeleted:
     """The app is gone."""
 
     name: str
+
+
+@dataclass(frozen=True)
+class AppRoutesChanged:
+    """The path routes of an app were replaced."""
+
+    name: str

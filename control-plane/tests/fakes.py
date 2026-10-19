@@ -12,7 +12,7 @@ from pwdlib import PasswordHash
 from pwdlib.hashers.argon2 import Argon2Hasher
 
 from app.agents.client import DeployResult, ReplicaInfo, ReplicaResult
-from app.apps.services.facade import App, AppNotFoundError, AppsFacade
+from app.apps.services.facade import App, AppNotFoundError, AppRoute, AppsFacade
 from app.auth.services.passwords import PasswordHasher
 from app.deploys.repositories.deploys import Deploy, DeployStatus
 from app.deploys.repositories.replicas import Replica, replica_id
@@ -261,7 +261,9 @@ class FakeApps:
         missing: bool = False,
         env: dict[str, str] | None = None,
         stopped: list[str] | None = None,
+        routes: dict[str, tuple[AppRoute, ...]] | None = None,
     ) -> None:
+        self.routes = routes or {}
         self.missing = missing
         self.env = env or {}
         self.stopped = stopped or []
@@ -278,6 +280,9 @@ class FakeApps:
             subdir="",
             env=self.env,
         )
+
+    async def path_routes(self) -> dict[str, tuple[AppRoute, ...]]:
+        return dict(self.routes)
 
     async def stopped_app_names(self) -> list[str]:
         return list(self.stopped)

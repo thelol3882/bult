@@ -28,6 +28,11 @@ class NotFoundError(AppError):
     code = ErrorCode.NOT_FOUND
 
 
+class UnprocessableError(AppError):
+    status = 422
+    code = ErrorCode.VALIDATION_ERROR
+
+
 class ConflictError(AppError):
     status = 409
     code = ErrorCode.CONFLICT

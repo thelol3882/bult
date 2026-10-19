@@ -6,12 +6,20 @@ import os
 import shutil
 from collections.abc import Iterable, Mapping
 from collections.abc import Set as AbstractSet
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
-from typing import Protocol
+from typing import Literal, Protocol
+
+type LbAlgorithm = Literal["round_robin", "least_conn", "ip_hash"]
 
 PROXY_CONNECT_TIMEOUT = "3s"  # a dead node must not stall requests for the 60 s default
+UPSTREAM_ZONE_SIZE = "64k"
+UPSTREAM_MAX_FAILS = 3
+UPSTREAM_FAIL_TIMEOUT = "10s"
+UPSTREAM_KEEPALIVE = 16
+PROXY_NEXT_UPSTREAM_TRIES = 2
+BACKEND_DOWN_BODY = '{"detail": "backend is not running", "code": "backend_unavailable"}'
 STOPPED_SNIPPET = "/etc/nginx/bult/snippets/stopped.conf"  # lives in deploy/nginx
 
 
@@ -29,19 +37,78 @@ class Upstream:
 
 
 @dataclass(frozen=True)
+class PathRoute:
+    """`path` on the app's own domain is served by another app."""
+
+    path: str  # '/api': validated by the apps domain (safe inside nginx config), no trailing slash
+    target: str  # name of the app that answers
+
+
+@dataclass(frozen=True)
 class Route:
-    """One app at <name>.<domain>, balanced over its replicas (nginx's default round-robin)."""
+    """One app at <name>.<domain>, balanced over its replicas, plus the paths it hands to other apps."""
 
     name: str  # DNS label validated by Pydantic: safe inside nginx config
     upstreams: tuple[Upstream, ...]
+    paths: tuple[PathRoute, ...] = ()
 
 
 class RouteApplyError(Exception):
     """The sidecar rejected the version (`nginx -t` failed)."""
 
 
+def _proxy_location(prefix: str, upstream: str) -> str:
+    """A proxied location. No proxy_set_header here: one at this level would drop every
+    header set in nginx.conf (Host, X-Forwarded-*); HTTP/1.1 and an empty `Connection`
+    (needed by the upstream's keepalive) come from there too.
+
+    Retries: another replica is tried only when the request may not have reached one (connect
+    error, timeout), and nginx never repeats a non-idempotent request (POST) once it was sent.
+    Do not add `non_idempotent`: "idempotent by the spec" is not "idempotent in the app".
+    """
+    return f"""\
+    location {prefix} {{
+        proxy_pass http://{upstream};
+        proxy_connect_timeout {PROXY_CONNECT_TIMEOUT};
+        proxy_next_upstream error timeout;
+        proxy_next_upstream_tries {PROXY_NEXT_UPSTREAM_TRIES};
+    }}
+"""
+
+
+def _backend_down_location(prefix: str) -> str:
+    return f"""\
+    location {prefix} {{
+        types {{}}
+        default_type application/json;
+        add_header Cache-Control "no-store" always;
+        return 503 '{BACKEND_DOWN_BODY}';
+    }}
+"""
+
+
+def _path_locations(route: Route, live: AbstractSet[str]) -> str:
+    """One location per path route, longest path first (nginx picks the longest prefix anyway).
+
+    `/api/` with the slash: `/apiary` is not caught; a bare `/api` gets nginx's 301 to `/api/`
+    when proxied, and an exact-match 503 when the target is down. The prefix is not stripped
+    (no URI in proxy_pass): the target sees the same path as the client.
+    """
+    blocks = []
+    for p in sorted(route.paths, key=lambda p: (-len(p.path), p.path)):
+        if p.target in live:
+            blocks.append(_proxy_location(f"{p.path}/", f"app_{p.target}"))
+        else:
+            blocks.append(_backend_down_location(f"= {p.path}"))
+            blocks.append(_backend_down_location(f"{p.path}/"))
+    return "\n".join(blocks) + ("\n" if blocks else "")
+
+
 def render(
-    routes: list[Route], domain: str, stopped: Iterable[str] = ()
+    routes: list[Route],
+    domain: str,
+    stopped: Iterable[str] = (),
+    algorithm: LbAlgorithm = "round_robin",
 ) -> dict[str, str]:
     """Filename -> nginx config: a server block and upstream per app, a 503 page per stopped app."""
     files = {}
@@ -54,25 +121,28 @@ server {{
     include {STOPPED_SNIPPET};
 }}
 """
+    live = {r.name for r in routes}
+    balancing = "" if algorithm == "round_robin" else f"    {algorithm};\n"
     for r in routes:
         servers = "\n".join(
-            f"    server {u.node_ip}:{u.host_port};" for u in r.upstreams
+            f"    server {u.node_ip}:{u.host_port} "
+            f"max_fails={UPSTREAM_MAX_FAILS} fail_timeout={UPSTREAM_FAIL_TIMEOUT};"
+            for u in r.upstreams
         )
+        # `zone`: counters and failure marks shared by the worker processes.
+        # `keepalive` goes after the balancing method.
         files[f"{r.name}.conf"] = f"""\
 upstream app_{r.name} {{
-{servers}
-    keepalive 16;
+    zone app_{r.name} {UPSTREAM_ZONE_SIZE};
+{balancing}{servers}
+    keepalive {UPSTREAM_KEEPALIVE};
 }}
 
 server {{
     listen 80;
     server_name {r.name}.{domain};
 
-    location / {{
-        proxy_pass http://app_{r.name};
-        proxy_connect_timeout {PROXY_CONNECT_TIMEOUT};
-    }}
-}}
+{_path_locations(r, live)}{_proxy_location("/", f"app_{r.name}")}}}
 """
     return files
 
@@ -88,8 +158,11 @@ def read_status(path: Path) -> dict | None:
 class RouteWriter:
     """Writes route versions to the shared volume and waits for the sidecar."""
 
-    def __init__(self, base_dir: Path, domain: str) -> None:
+    def __init__(
+        self, base_dir: Path, domain: str, algorithm: LbAlgorithm = "round_robin"
+    ) -> None:
         self.domain = domain
+        self.algorithm: LbAlgorithm = algorithm
         self.desired_dir = base_dir / "desired"
         self.latest_file = self.desired_dir / "LATEST"
         self.status_file = base_dir / "status.json"
@@ -122,7 +195,7 @@ class RouteWriter:
         tmp_dir = self.desired_dir / f".tmp-{gen}"
         shutil.rmtree(tmp_dir, ignore_errors=True)
         tmp_dir.mkdir()
-        for filename, text in render(routes, self.domain, stopped).items():
+        for filename, text in render(routes, self.domain, stopped, self.algorithm).items():
             (tmp_dir / filename).write_text(text)
         os.rename(tmp_dir, self.desired_dir / str(gen))
 
@@ -185,6 +258,13 @@ def route_for(
         if r.node in routable and r.node in node_ips
     )
     return Route(app_name, upstreams) if upstreams else None
+
+
+def with_paths(
+    routes: Iterable[Route], paths: Mapping[str, Iterable[PathRoute]]
+) -> list[Route]:
+    """The routes with the path routes of their apps attached."""
+    return [replace(r, paths=tuple(paths.get(r.name, ()))) for r in routes]
 
 
 def running_routes(

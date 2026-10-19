@@ -22,6 +22,10 @@ class AppModel(UUIDv7PkMixin, TimestampMixin, Base):
     env: Mapped[dict[str, str]] = mapped_column(
         JSONB(), server_default=text("'{}'::jsonb")
     )
+    # [{"path": "/api", "app": "shop-api"}]: paths of this app's domain served by other apps.
+    routes: Mapped[list[dict[str, str]]] = mapped_column(
+        JSONB(), server_default=text("'[]'::jsonb")
+    )
     # Table name, not UserModel: the apps domain must not import app.auth.
     # RESTRICT: a cascade would orphan the replicas running on the nodes.
     owner_id: Mapped[UUID] = mapped_column(
