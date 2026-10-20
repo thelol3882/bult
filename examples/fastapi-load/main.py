@@ -57,6 +57,10 @@ def hold_memory(
     with _lock:
         _held.append((time.monotonic() + seconds, block))
         held_mb = sum(len(b) for _, b in _held) // (1024 * 1024)
+    # Release on time even if no request comes in to trigger the cleanup.
+    timer = threading.Timer(seconds + 0.1, _release_expired)
+    timer.daemon = True
+    timer.start()
     return {"replica": REPLICA, "held_mb": held_mb, "release_in_s": seconds}
 
 
