@@ -4,6 +4,7 @@ import { ColorSchemeScript, mantineHtmlProps } from '@mantine/core';
 import { Providers } from './providers';
 
 import '@mantine/core/styles.css';
+import '@mantine/charts/styles.css';
 import '@mantine/notifications/styles.css';
 import '@mantine/nprogress/styles.css';
 import '@/theme/tokens.css';

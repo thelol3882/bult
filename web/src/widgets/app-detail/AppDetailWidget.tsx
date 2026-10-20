@@ -37,12 +37,13 @@ import {
     useStartDeploy,
     useStopApp,
 } from '@/features/deploys';
+import { MetricsPanel } from '@/features/metrics';
 import { normalizeError } from '@/shared/api';
 import { isDeployActive } from '@/shared/types';
 import { EmptyState, Mono, PageHeader } from '@/shared/components';
 import classes from './AppDetailWidget.module.css';
 
-const TABS = ['overview', 'logs'] as const;
+const TABS = ['overview', 'metrics', 'logs'] as const;
 
 export function AppDetailWidget({ name }: { name: string }) {
     const router = useRouter();
@@ -201,6 +202,7 @@ export function AppDetailWidget({ name }: { name: string }) {
             >
                 <Tabs.List mb="lg">
                     <Tabs.Tab value="overview">Overview</Tabs.Tab>
+                    <Tabs.Tab value="metrics">Metrics</Tabs.Tab>
                     <Tabs.Tab value="logs">Logs</Tabs.Tab>
                 </Tabs.List>
 
@@ -257,6 +259,10 @@ export function AppDetailWidget({ name }: { name: string }) {
                             />
                         </div>
                     </div>
+                </Tabs.Panel>
+
+                <Tabs.Panel value="metrics">
+                    <MetricsPanel name={app.name} />
                 </Tabs.Panel>
 
                 <Tabs.Panel value="logs">

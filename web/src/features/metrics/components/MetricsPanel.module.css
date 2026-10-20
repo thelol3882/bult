@@ -1,0 +1,68 @@
+/* Categorical slots 1-5 of the data-viz palette, stepped for each surface. */
+.root {
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --series-5: #e87ba4;
+
+    display: grid;
+    gap: 20px;
+}
+
+:global([data-mantine-color-scheme='dark']) .root {
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --series-5: #d55181;
+}
+
+.bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.spacer {
+    flex: 1;
+}
+
+.muted {
+    color: var(--slate-6);
+    font-size: 13px;
+}
+
+.state {
+    display: grid;
+    place-items: center;
+    padding: 32px;
+}
+
+.tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 20px;
+}
+
+.tileLabel {
+    color: var(--slate-6);
+    font-size: 13px;
+}
+
+.tileValue {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin-top: 4px;
+    font-family: var(--font-display), var(--font-sans), sans-serif;
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.tileNote {
+    color: var(--slate-6);
+    font-family: var(--font-sans), sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+}

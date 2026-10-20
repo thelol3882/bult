@@ -1,0 +1,47 @@
+.head {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--slate-2);
+}
+
+.head h3 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 600;
+}
+
+.plot {
+    padding: 16px 12px 4px 4px;
+}
+
+.legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 22px;
+    margin: 0;
+    padding: 8px 20px 16px;
+    list-style: none;
+    color: var(--slate-6);
+    font-size: 13px;
+}
+
+.legend li {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.legend b {
+    color: var(--slate-9);
+    font-family: var(--font-mono), ui-monospace, monospace;
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.tag {
+    color: var(--slate-4);
+    font-style: normal;
+}
+
+.removed b {
+    color: var(--slate-5);
+}
