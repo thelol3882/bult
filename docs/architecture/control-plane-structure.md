@@ -29,6 +29,7 @@ app/
                   handlers.py = subscribers of other domains' events: thin entry points like routers, call services only (wired in main.py only)
   auth/           users, argon2 passwords, JWT access tokens; same layer folders; deps.py exports `CurrentUser`
   nodes/          registered node agents: heartbeat endpoint (node tokens, not users), status from `last_seen_at`, the directory of agent addresses, the status monitor, GET /nodes; same layer folders; services/facade.py + public.py are what other domains use
+  metrics/        CPU/memory samples of replicas: stored from heartbeats (nodes pass them through a callable wired in `main`, like the replica counts), `GET /apps/{name}/metrics`, the retention loop; reaches apps and deploys through their facades (`deploys/services/facade.py`: who owns a running replica, how many are ready); same layer folders
   agents/         infrastructure: gRPC clients to node agents, addressed through a `Directory` protocol the nodes facade fits
   ingress/        infrastructure: route versions shared with the nginx sidecar
   main.py

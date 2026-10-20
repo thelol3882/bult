@@ -1,7 +1,9 @@
 """Application factory: `uvicorn app.main:create_app --factory`."""
 
 import asyncio
+import dataclasses
 import logging
+from collections.abc import Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -28,6 +30,7 @@ from app.deploys.deps import build_deploy_service
 from app.deploys.routers import deploys as deploys_router
 from app.deploys.routers import lifecycle as lifecycle_router
 from app.deploys.services.deploys import DeployService
+from app.deploys.services.facade import DeploysFacade
 from app.deploys.services.reconcile import (
     fail_deploys_without_replica,
     remove_orphan_replicas,
@@ -35,11 +38,16 @@ from app.deploys.services.reconcile import (
 from app.deploys.services.worker import DeployWorker
 from app.deploys.uow import sql_deploys_uow_factory
 from app.ingress.routes import RouteWriter
+from app.metrics import handlers as metrics_handlers
+from app.metrics.routers import metrics as metrics_router
+from app.metrics.services.metrics import MetricsService, UsageSample
+from app.metrics.services.retention import RetentionLoop
+from app.metrics.uow import sql_metrics_uow_factory
 from app.nodes.routers import internal as nodes_internal_router
 from app.nodes.routers import nodes as nodes_router
 from app.nodes.services.facade import NodesFacade
 from app.nodes.services.monitor import NodeMonitor
-from app.nodes.services.nodes import NodeService
+from app.nodes.services.nodes import NodeService, ReplicaUsage
 from app.nodes.uow import sql_nodes_uow_factory
 
 logger = logging.getLogger(__name__)
@@ -69,6 +77,7 @@ async def lifespan(app: FastAPI):
     app.state.deploys_uow_factory = sql_deploys_uow_factory(session_factory)
 
     app.state.auth_uow_factory = sql_auth_uow_factory(session_factory)
+    app.state.metrics_uow_factory = sql_metrics_uow_factory(session_factory)
     app.state.password_hasher = PasswordHasher()
     app.state.token_issuer = TokenIssuer(
         secret=settings.jwt_secret.get_secret_value(),
@@ -79,6 +88,16 @@ async def lifespan(app: FastAPI):
         uow_factory=app.state.apps_uow_factory,
         settings=settings,
         events=app.state.event_bus.collector(),
+    )
+    app.state.deploys = DeploysFacade(app.state.deploys_uow_factory, app.state.nodes)
+    app.state.metrics = MetricsService(
+        app.state.metrics_uow_factory,
+        apps_facade,
+        app.state.deploys,
+        retention_hours=settings.metrics_retention_hours,
+    )
+    retention = RetentionLoop(
+        app.state.metrics.purge, settings.metrics_retention_interval
     )
     worker = DeployWorker(
         app.state.agents,
@@ -100,9 +119,12 @@ async def lifespan(app: FastAPI):
         startup_check = asyncio.create_task(_startup_check(app))
     if settings.node_monitor:
         monitor.start()
+    if settings.metrics_retention:
+        retention.start()
 
     yield
 
+    await retention.stop()
     await monitor.stop()
     if startup_check is not None:
         startup_check.cancel()
@@ -129,6 +151,12 @@ async def _reapply_routes(app: FastAPI, apps: AppsFacade) -> None:
 async def _replica_counts(app: FastAPI) -> dict[str, int]:
     async with app.state.deploys_uow_factory() as uow:
         return await uow.replicas.count_running_by_node()
+
+
+async def _store_usage(app: FastAPI, node: str, usage: Sequence[ReplicaUsage]) -> None:
+    """Hand a node's replica readings to the metrics domain."""
+    samples = [UsageSample(**dataclasses.asdict(u)) for u in usage]
+    _ = await app.state.metrics.record(node, samples)
 
 
 async def _startup_check(app: FastAPI) -> None:
@@ -186,7 +214,11 @@ def _build_event_bus(app: FastAPI) -> EventBus:
     async def on_app_routes_changed(event: AppRoutesChanged) -> None:
         await deploys_handlers.on_app_routes_changed(event, deploys_service())
 
+    async def forget_app_metrics(event: AppDeleted) -> None:
+        await metrics_handlers.on_app_deleted(event, app.state.metrics)
+
     bus.subscribe(AppDeleted, on_app_deleted)
+    bus.subscribe(AppDeleted, forget_app_metrics)
     bus.subscribe(AppRoutesChanged, on_app_routes_changed)
     return bus
 
@@ -202,6 +234,7 @@ def create_app() -> FastAPI:
 
     app.state.event_bus = _build_event_bus(app)
     app.state.replica_counts = lambda: _replica_counts(app)
+    app.state.usage_sink = lambda node, usage: _store_usage(app, node, usage)
 
     app.add_middleware(TraceIdMiddleware)
     exception_handlers.register(app)
@@ -213,5 +246,6 @@ def create_app() -> FastAPI:
     app.include_router(apps_router.router)
     app.include_router(deploys_router.router)
     app.include_router(lifecycle_router.router)
+    app.include_router(metrics_router.router)
 
     return app

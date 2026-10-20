@@ -66,7 +66,7 @@ async def _truncate(url: str) -> None:
     engine = create_async_engine(url)
     try:
         async with engine.begin() as conn:
-            await conn.execute(text("TRUNCATE users, apps, deploys, replicas, nodes RESTART IDENTITY CASCADE"))
+            await conn.execute(text("TRUNCATE users, apps, deploys, replicas, nodes, replica_metrics RESTART IDENTITY CASCADE"))
     finally:
         await engine.dispose()
 

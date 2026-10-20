@@ -1,6 +1,7 @@
 """Shared fixtures for tests/ and app/<domain>/tests/."""
 
 from collections.abc import Callable, Iterator
+from typing import cast
 from pathlib import Path
 
 import pytest
@@ -9,6 +10,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 
 from app.apps.deps import get_apps_uow_factory
+from app.apps.public import build_apps_facade
 from app.apps.uow import InMemoryAppsUoW
 from app.auth.deps import get_auth_uow_factory
 from app.auth.services.tokens import TokenIssuer
@@ -17,9 +19,13 @@ from app.core.config import Settings
 from app.core.deps import get_agents, get_routes, get_settings
 from app.deploys.deps import get_deploys_uow_factory
 from app.deploys.uow import InMemoryDeploysUoW
+from app.deploys.services.facade import DeploysFacade
 from app.main import create_app
+from app.metrics.services.metrics import MetricsService
+from app.metrics.uow import InMemoryMetricsUoW
 from app.nodes.deps import get_node_service
 from app.nodes.public import get_nodes_facade
+from app.nodes.services.facade import NodesFacade
 from app.nodes.services.nodes import NodeService
 from app.nodes.uow import InMemoryNodesUoW
 from tests.fakes import (
@@ -75,6 +81,11 @@ def auth_uow() -> InMemoryAuthUoW:
 
 
 @pytest.fixture
+def metrics_uow() -> InMemoryMetricsUoW:
+    return InMemoryMetricsUoW()
+
+
+@pytest.fixture
 def nodes() -> FakeNodes:
     """The runners the deploys domain sees: node-a, ready."""
     return FakeNodes()
@@ -116,6 +127,8 @@ def app(
     agents: FakeAgentClients,
     nodes: FakeNodes,
     node_service: NodeService,
+    metrics_uow: InMemoryMetricsUoW,
+    clock: FakeClock,
 ) -> Iterator[FastAPI]:
     """A fresh app with fakes wired in; the env vars feed the lifespan when a test runs it."""
     monkeypatch.setenv("BULT_BUILDER", "builder:50051")
@@ -126,6 +139,7 @@ def app(
     monkeypatch.setenv("BULT_JWT_SECRET", TEST_JWT_SECRET)
     monkeypatch.setenv("BULT_DEPLOY_WORKER", "false")
     monkeypatch.setenv("BULT_NODE_MONITOR", "false")
+    monkeypatch.setenv("BULT_METRICS_RETENTION", "false")
 
     def apps_uow_factory() -> InMemoryAppsUoW:
         return apps_uow
@@ -147,6 +161,17 @@ def app(
     application.state.agents = agents
     application.state.nodes = nodes
     application.state.node_service = node_service
+    application.state.deploys = DeploysFacade(
+        deploys_uow_factory, cast(NodesFacade, nodes)
+    )
+    application.state.metrics = MetricsService(
+        lambda: metrics_uow,
+        build_apps_facade(
+            apps_uow_factory, settings, application.state.event_bus.collector()
+        ),
+        application.state.deploys,
+        clock=clock,
+    )
     application.state.routes = routes
     application.state.settings = settings
     application.dependency_overrides[get_apps_uow_factory] = lambda: apps_uow_factory

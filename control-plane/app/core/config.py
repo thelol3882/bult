@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     node_ttl_seconds: float = Field(default=15.0, gt=0)  # silent for longer -> unhealthy
     node_monitor: bool = True  # BULT_NODE_MONITOR=false: no status monitor (API-only tests)
     node_monitor_interval: float = Field(default=3.0, gt=0)
+    # BULT_METRICS_RETENTION_HOURS: how long replica CPU/memory samples are kept.
+    metrics_retention_hours: float = Field(default=24.0, gt=0)
+    metrics_retention_interval: float = Field(default=300.0, gt=0)  # seconds between purges
+    metrics_retention: bool = True  # BULT_METRICS_RETENTION=false: no purge loop (API-only tests)
 
     @field_validator("node_tokens", mode="before")
     @classmethod

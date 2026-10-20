@@ -20,6 +20,16 @@ class CapacityIn(BaseModel):
     memory_bytes: Annotated[int, Field(ge=0, le=2**50)] = 0
 
 
+class ReplicaUsageIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    replica_id: Annotated[str, Field(min_length=1, max_length=200)]
+    cpu_cores: Annotated[float, Field(ge=0, le=100_000, allow_inf_nan=False)]
+    cpu_limit_pct: Annotated[float, Field(ge=0, le=10_000_000, allow_inf_nan=False)]
+    mem_bytes: Annotated[int, Field(ge=0, le=2**50)]
+    mem_limit_bytes: Annotated[int, Field(ge=0, le=2**62)]
+
+
 class HeartbeatIn(BaseModel):
     """Request body of POST /internal/nodes/heartbeat."""
 
@@ -30,6 +40,7 @@ class HeartbeatIn(BaseModel):
     role: NodeRole
     version: Annotated[str, Field(max_length=100)] = ""
     capacity: CapacityIn = CapacityIn()
+    replicas: Annotated[list[ReplicaUsageIn], Field(max_length=500)] = []
 
 
 class NodeOut(BaseModel):

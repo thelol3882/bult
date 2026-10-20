@@ -22,6 +22,12 @@ from app.core.db import create_engine, create_session_factory
 from app.deploys.errors import DeployInProgressError
 from app.deploys.repositories.deploys import Deploy
 from app.deploys.repositories.replicas import Replica
+from app.metrics.repositories.metrics import (
+    BUCKET_ORIGIN,
+    InMemoryMetricsRepository,
+    ReplicaSample,
+)
+from app.metrics.uow import SqlMetricsUoW
 from app.nodes.repositories.nodes import Node
 from app.nodes.uow import SqlNodesUoW
 from app.deploys.uow import SqlDeploysUoW
@@ -663,3 +669,86 @@ async def test_apps_replicas_are_limited_to_zero_to_five(factory: async_sessionm
     async with SqlAppsUoW(factory) as uow:
         with pytest.raises(IntegrityError):
             await uow.apps.update("hello", replicas=6)
+
+
+def _sample(replica_id: str, ts: datetime, cpu: float, mem: int, app: str = "blog") -> ReplicaSample:
+    return ReplicaSample(replica_id, app, "node-a", ts, cpu / 100, cpu, mem, 1000)
+
+
+# On the date_bin grid, so the buckets of the two implementations line up.
+T0 = BUCKET_ORIGIN + timedelta(days=9_000)
+
+
+@db_test
+async def test_metrics_series_buckets_like_the_in_memory_fake(factory: async_sessionmaker):
+    samples = [
+        _sample("d1-r0", T0 + timedelta(seconds=s), cpu, mem)
+        for s, cpu, mem in [(1, 10, 100), (3, 31, 301), (14, 90, 900), (62, 50, 500), (400, 5, 5)]
+    ] + [
+        _sample("d1-r1", T0 + timedelta(seconds=2), 70, 700),
+        _sample("other-r0", T0 + timedelta(seconds=2), 99, 999, app="shop"),
+        _sample("d1-r0", T0 - timedelta(seconds=1), 1, 1),  # before the window
+    ]
+    fake = InMemoryMetricsRepository()
+    await fake.add_many(samples)
+    async with SqlMetricsUoW(factory) as uow:
+        await uow.metrics.add_many(samples)
+        await uow.commit()
+
+    async with SqlMetricsUoW(factory) as uow:
+        got = await uow.metrics.series("blog", T0, 12)
+
+    assert got == await fake.series("blog", T0, 12)
+    assert [(p.replica_id, p.ts, p.cpu_limit_pct, p.mem_bytes) for p in got[:2]] == [
+        ("d1-r0", T0, 20.5, 200),  # (10 + 31) / 2 and round(200.5) = 200 in both
+        ("d1-r0", T0 + timedelta(seconds=12), 90, 900),
+    ]
+    assert {p.replica_id for p in got} == {"d1-r0", "d1-r1"}
+
+
+@db_test
+async def test_metrics_latest_is_the_newest_sample_per_replica_in_the_window(
+    factory: async_sessionmaker,
+):
+    async with SqlMetricsUoW(factory) as uow:
+        await uow.metrics.add_many(
+            [
+                _sample("d1-r0", T0, 10, 100),
+                _sample("d1-r0", T0 + timedelta(seconds=5), 20, 200),
+                _sample("d1-r1", T0 + timedelta(seconds=4), 30, 300),
+                _sample("old-r0", T0 - timedelta(seconds=60), 40, 400),
+            ]
+        )
+        await uow.commit()
+
+    async with SqlMetricsUoW(factory) as uow:
+        latest = await uow.metrics.latest("blog", T0 - timedelta(seconds=15))
+
+    assert [(s.replica_id, s.cpu_limit_pct) for s in latest] == [("d1-r0", 20), ("d1-r1", 30)]
+
+
+@db_test
+async def test_metrics_delete_older_than_respects_cutoff_limit_and_app_delete(
+    factory: async_sessionmaker,
+):
+    async with SqlMetricsUoW(factory) as uow:
+        await uow.metrics.add_many(
+            [_sample(f"d1-r{i}", T0 + timedelta(seconds=i), 1, 1) for i in range(5)]
+            + [_sample("shop-r0", T0 + timedelta(seconds=100), 1, 1, app="shop")]
+        )
+        await uow.commit()
+    cutoff = T0 + timedelta(seconds=3)  # r0, r1, r2 are older; r3 is exactly at it
+
+    async with SqlMetricsUoW(factory) as uow:
+        assert await uow.metrics.delete_older_than(cutoff, 2) == 2
+        assert await uow.metrics.delete_older_than(cutoff, 2) == 1
+        assert await uow.metrics.delete_older_than(cutoff, 2) == 0
+        await uow.commit()
+
+    async with SqlMetricsUoW(factory) as uow:
+        left = await uow.metrics.latest("blog", T0)
+        assert [s.replica_id for s in left] == ["d1-r3", "d1-r4"]
+        await uow.metrics.delete_for_app("blog")
+        await uow.commit()
+        assert await uow.metrics.latest("blog", T0) == []
+        assert len(await uow.metrics.latest("shop", T0)) == 1

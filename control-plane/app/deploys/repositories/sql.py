@@ -279,6 +279,17 @@ class SqlReplicaRepository:
         )
         return [_replica_to_domain(row) for row in rows.all()]
 
+    async def get_running(self, replica_ids: Iterable[str]) -> list[Replica]:
+        ids = list(replica_ids)
+        if not ids:
+            return []
+        rows = await self._session.scalars(
+            select(ReplicaModel).where(
+                ReplicaModel.id.in_(ids), ReplicaModel.status == "running"
+            )
+        )
+        return [_replica_to_domain(row) for row in rows.all()]
+
     async def mark_removed(self, replica_ids: Iterable[str]) -> None:
         ids = list(replica_ids)
         if not ids:

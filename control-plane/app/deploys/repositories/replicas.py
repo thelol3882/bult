@@ -55,6 +55,10 @@ class ReplicaRepository(Protocol):
         """Every running replica, any deploy."""
         ...
 
+    async def get_running(self, replica_ids: Iterable[str]) -> list[Replica]:
+        """The running replicas with these ids; unknown and removed ids are left out."""
+        ...
+
     async def mark_removed(self, replica_ids: Iterable[str]) -> None: ...
 
     async def count_running_by_node(self) -> dict[str, int]: ...
@@ -93,6 +97,10 @@ class InMemoryReplicaRepository:
     async def list_all_running(self) -> list[Replica]:
         running = [r for r in self._replicas.values() if r.status == "running"]
         return [replace(r) for r in sorted(running, key=lambda r: (r.deploy_id, r.index))]
+
+    async def get_running(self, replica_ids: Iterable[str]) -> list[Replica]:
+        found = [self._replicas.get(rid) for rid in replica_ids]
+        return [replace(r) for r in found if r is not None and r.status == "running"]
 
     async def mark_removed(self, replica_ids: Iterable[str]) -> None:
         for rid in replica_ids:

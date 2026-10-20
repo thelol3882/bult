@@ -20,6 +20,17 @@ def _utcnow() -> datetime:
 
 
 @dataclass(frozen=True)
+class ReplicaUsage:
+    """CPU and memory of one replica, as its node measured them."""
+
+    replica_id: str
+    cpu_cores: float
+    cpu_limit_pct: float
+    mem_bytes: int
+    mem_limit_bytes: int
+
+
+@dataclass(frozen=True)
 class NodeReport:
     """What a node says about itself in a heartbeat."""
 
@@ -29,6 +40,7 @@ class NodeReport:
     version: str = ""
     cpus: int = 0
     memory_bytes: int = 0
+    replicas: tuple[ReplicaUsage, ...] = ()  # absent in heartbeats of older agents and builders
 
 
 @dataclass(frozen=True)
