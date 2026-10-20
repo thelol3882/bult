@@ -12,6 +12,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/thelol3882/bult/agent/internal/metrics"
 )
 
 const (
@@ -33,6 +35,12 @@ type Capacity struct {
 	MemoryBytes int64 `json:"memory_bytes"`
 }
 
+// Sampler reads the usage of the replicas running on this node. Collect never
+// fails: what could not be read is left out.
+type Sampler interface {
+	Collect(ctx context.Context) []metrics.Replica
+}
+
 // Config describes the node and where to report it.
 type Config struct {
 	URL      string // control plane base URL, e.g. http://192.168.252.1:8000
@@ -43,6 +51,7 @@ type Config struct {
 	Version  string
 	Capacity Capacity
 	Interval time.Duration // zero means DefaultInterval
+	Sampler  Sampler       // nil: no replica metrics (builder-only nodes)
 }
 
 type payload struct {
@@ -51,6 +60,9 @@ type payload struct {
 	Role     string   `json:"role"`
 	Version  string   `json:"version"`
 	Capacity Capacity `json:"capacity"`
+	// Replicas is omitted when empty so that an older control plane, and a
+	// builder, see the same body as before.
+	Replicas []metrics.Replica `json:"replicas,omitempty"`
 }
 
 // Run sends a beat immediately and then one per interval until ctx is
@@ -64,18 +76,6 @@ func Run(ctx context.Context, cfg Config, client *http.Client) {
 		interval = DefaultInterval
 	}
 
-	body, err := json.Marshal(payload{
-		Name:     cfg.Name,
-		Address:  cfg.Address,
-		Role:     cfg.Role,
-		Version:  cfg.Version,
-		Capacity: cfg.Capacity,
-	})
-	if err != nil {
-		// A struct of strings and numbers cannot fail to marshal; log in case that changes.
-		slog.Error("heartbeat disabled: cannot encode payload", "err", err)
-		return
-	}
 	url := strings.TrimRight(cfg.URL, "/") + endpoint
 
 	ticker := time.NewTicker(interval)
@@ -83,7 +83,7 @@ func Run(ctx context.Context, cfg Config, client *http.Client) {
 
 	failures := 0
 	for {
-		err := beat(ctx, client, url, cfg.Token, body)
+		err := send(ctx, client, url, cfg)
 		switch {
 		case ctx.Err() != nil:
 			return
@@ -105,6 +105,27 @@ func Run(ctx context.Context, cfg Config, client *http.Client) {
 		case <-ticker.C:
 		}
 	}
+}
+
+// send builds the current payload, with fresh replica metrics, and beats.
+// Metrics are collected first and are bounded by the sampler's own timeout, so
+// they can delay a beat but not stop it.
+func send(ctx context.Context, client *http.Client, url string, cfg Config) error {
+	p := payload{
+		Name:     cfg.Name,
+		Address:  cfg.Address,
+		Role:     cfg.Role,
+		Version:  cfg.Version,
+		Capacity: cfg.Capacity,
+	}
+	if cfg.Sampler != nil {
+		p.Replicas = cfg.Sampler.Collect(ctx)
+	}
+	body, err := json.Marshal(p)
+	if err != nil {
+		return fmt.Errorf("encode payload: %w", err)
+	}
+	return beat(ctx, client, url, cfg.Token, body)
 }
 
 // beat sends one heartbeat. The token only goes into the header, so it cannot

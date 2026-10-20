@@ -222,9 +222,10 @@ A deadline answers "how long to wait for the result"; keepalive answers "is the 
 
 ## Node registration (heartbeat)
 
-Registration is not a gRPC call: the agent is a client of the control plane's HTTP API here, the one place the dependency points that way (full design in `nodes.md`). Every 5 s, starting at once, `bultd` posts `{name, address, role, version, capacity: {cpus, memory_bytes}}` to `<--control-plane-url>/internal/nodes/heartbeat` with `Authorization: Bearer $BULTD_NODE_TOKEN`.
+Registration is not a gRPC call: the agent is a client of the control plane's HTTP API here, the one place the dependency points that way (full design in `nodes.md`). Every 5 s, starting at once, `bultd` posts `{name, address, role, version, capacity: {cpus, memory_bytes}, replicas: [...]}` to `<--control-plane-url>/internal/nodes/heartbeat` with `Authorization: Bearer $BULTD_NODE_TOKEN`.
 
 - Flags: `--control-plane-url`, `--node-name` (default: the hostname), `--advertise-addr` (the gRPC `host:port` the control plane should dial; required with the URL). The token comes from the environment, never a flag, so it is not in the process list or the logs.
+- A runner (`runner` or `both`) adds `replicas`: one reading per running replica (CPU, memory), taken from Docker stats just before the beat; builders and older agents omit the field (see `metrics.md`).
 - Heartbeats are off, with one log line, unless both the URL and the token are set; the agent starts as before.
 - The HTTP client has its own 3 s timeout so a hung control plane cannot stall the loop; the request context is the agent's run context, so shutdown aborts an in-flight beat and the loop ends before the agent exits. Failures are logged on the first miss and then every 12th (about a minute), and "restored" is logged once.
 - A heartbeat that stops is how the control plane notices a dead node (`unhealthy` after ~15 s); there is no deregistration call.

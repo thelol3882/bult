@@ -16,6 +16,7 @@ import (
 	"github.com/thelol3882/bult/agent/internal/build"
 	"github.com/thelol3882/bult/agent/internal/docker"
 	"github.com/thelol3882/bult/agent/internal/heartbeat"
+	"github.com/thelol3882/bult/agent/internal/metrics"
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
 	"google.golang.org/grpc"
@@ -180,7 +181,7 @@ func run(cfg config) error {
 	}()
 
 	// ctx is cancelled by the signal, which also stops the heartbeat loop.
-	heartbeatDone := startHeartbeat(ctx, cfg, hostname)
+	heartbeatDone := startHeartbeat(ctx, cfg, hostname, dc)
 
 	select {
 	case err := <-serveErr:
@@ -222,7 +223,7 @@ func run(cfg config) error {
 
 // startHeartbeat starts the heartbeat loop and returns a channel that is closed
 // when the loop has stopped (at once if heartbeats are disabled).
-func startHeartbeat(ctx context.Context, cfg config, hostname string) <-chan struct{} {
+func startHeartbeat(ctx context.Context, cfg config, hostname string, dc *docker.Client) <-chan struct{} {
 	done := make(chan struct{})
 
 	if cfg.controlPlaneURL == "" || cfg.nodeToken == "" {
@@ -243,6 +244,9 @@ func startHeartbeat(ctx context.Context, cfg config, hostname string) <-chan str
 		Role:     cfg.role,
 		Version:  version,
 		Capacity: heartbeat.DetectCapacity(),
+	}
+	if cfg.role == "runner" || cfg.role == "both" {
+		hb.Sampler = metrics.NewCollector(dc, metrics.DefaultTimeout)
 	}
 	slog.Info("heartbeat enabled", "control_plane", cfg.controlPlaneURL, "node", name, "advertise", cfg.advertiseAddr)
 

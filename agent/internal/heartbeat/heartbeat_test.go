@@ -7,10 +7,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/thelol3882/bult/agent/internal/metrics"
 )
 
 func testConfig(url string) Config {
@@ -93,7 +96,7 @@ func TestBeatSendsPayloadAndToken(t *testing.T) {
 			Name: "node-1", Address: "10.0.0.5:50051", Role: "runner", Version: "v1",
 			Capacity: Capacity{CPUs: 2, MemoryBytes: 2 << 30},
 		}
-		if g.body != want {
+		if !reflect.DeepEqual(g.body, want) {
 			t.Errorf("body = %+v, want %+v", g.body, want)
 		}
 	case <-time.After(2 * time.Second):
@@ -222,5 +225,82 @@ func TestMemTotal(t *testing.T) {
 	}
 	if _, err := memTotal(bad); err == nil {
 		t.Error("expected an error for a malformed line")
+	}
+}
+
+type fakeSampler struct{ out []metrics.Replica }
+
+func (f fakeSampler) Collect(context.Context) []metrics.Replica { return f.out }
+
+// rawBodies serves heartbeats and passes each raw body on.
+func rawBodies(t *testing.T) (*httptest.Server, <-chan map[string]json.RawMessage) {
+	t.Helper()
+	ch := make(chan map[string]json.RawMessage, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var m map[string]json.RawMessage
+		if err := json.NewDecoder(r.Body).Decode(&m); err != nil {
+			t.Errorf("decode body: %v", err)
+		}
+		select {
+		case ch <- m:
+		default:
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, ch
+}
+
+func TestBeatCarriesReplicaMetrics(t *testing.T) {
+	srv, bodies := rawBodies(t)
+	cfg := testConfig(srv.URL)
+	want := []metrics.Replica{{ReplicaID: "d-r0", CPUCores: 0.25, CPULimitPct: 50, MemBytes: 10, MemLimitBytes: 20}}
+	cfg.Sampler = fakeSampler{out: want}
+
+	stop := start(t, cfg)
+	defer stop()
+
+	select {
+	case m := <-bodies:
+		var got []metrics.Replica
+		if err := json.Unmarshal(m["replicas"], &got); err != nil {
+			t.Fatalf("replicas: %v", err)
+		}
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("replicas = %+v, want %+v", got, want)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no heartbeat received")
+	}
+}
+
+func TestBeatWithoutSamplerHasNoReplicasField(t *testing.T) {
+	srv, bodies := rawBodies(t)
+	stop := start(t, testConfig(srv.URL))
+	defer stop()
+
+	select {
+	case m := <-bodies:
+		if _, ok := m["replicas"]; ok {
+			t.Error("replicas present without a sampler")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no heartbeat received")
+	}
+}
+
+func TestSamplerNothingToReportOmitsField(t *testing.T) {
+	srv, bodies := rawBodies(t)
+	cfg := testConfig(srv.URL)
+	cfg.Sampler = fakeSampler{}
+	stop := start(t, cfg)
+	defer stop()
+
+	select {
+	case m := <-bodies:
+		if _, ok := m["replicas"]; ok {
+			t.Error("empty replicas must be omitted")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no heartbeat received")
 	}
 }

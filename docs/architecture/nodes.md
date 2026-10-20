@@ -11,6 +11,8 @@ Every `bultd` with `--control-plane-url` sends `POST /internal/nodes/heartbeat` 
  "version": "v0.4", "capacity": {"cpus": 2, "memory_bytes": 2086961152}}
 ```
 
+A runner also sends `"replicas": [{"replica_id": "<deploy_id>-r0", "cpu_cores": 0.12, "cpu_limit_pct": 24.0, "mem_bytes": 52428800, "mem_limit_bytes": 268435456}]`, one reading per running replica; the control plane stores them (`metrics.md`). The field is optional, so builders and older agents still work, and a failure to store readings never fails the heartbeat.
+
 `address` is the gRPC address the control plane should dial (`--advertise-addr`); the control plane upserts the `nodes` row and sets `last_seen_at`. A new node appears by starting its agent with a token; nothing is configured on the control plane except the token. The agent logs a failure on the first miss and then once a minute, and stops with its run context on shutdown. Without `--control-plane-url` or `BULTD_NODE_TOKEN` it logs that heartbeats are off and runs as before.
 
 `role` is `builder`, `runner` or `both` (the agent's `--role`).
