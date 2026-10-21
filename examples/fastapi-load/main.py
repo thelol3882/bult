@@ -1,5 +1,7 @@
-"""FastAPI preset demo: endpoints that burn CPU or hold memory on demand, to watch the metrics."""
+"""FastAPI preset demo: endpoints that burn CPU, hold memory, crash or hang on demand,
+to watch the metrics and the replica health."""
 
+import os
 import socket
 import threading
 import time
@@ -62,6 +64,23 @@ def hold_memory(
     timer.daemon = True
     timer.start()
     return {"replica": REPLICA, "held_mb": held_mb, "release_in_s": seconds}
+
+
+@app.post("/crash")
+def crash() -> dict:
+    """Answer, then exit with code 1 a moment later: the replica dies like a crashing app."""
+    timer = threading.Timer(0.2, os._exit, args=(1,))
+    timer.daemon = True
+    timer.start()
+    return {"replica": REPLICA, "exit_code": 1, "in_s": 0.2}
+
+
+@app.post("/hang")
+async def hang(seconds: int = Query(60, ge=1, le=600)) -> dict:
+    """Block the event loop (not just this request): /healthz and every other request stall
+    for `seconds`, like an app stuck in a deadlock or a long synchronous call."""
+    time.sleep(seconds)
+    return {"replica": REPLICA, "hung_s": seconds}
 
 
 @app.get("/healthz")
