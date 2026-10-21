@@ -60,7 +60,7 @@ upstream app_<name> {
 - **`max_fails` / `fail_timeout`** are passive health checks: 3 failed attempts within 10 s take the replica out of rotation for 10 s.
 - **`keepalive 16`** reuses connections to the replicas. It needs HTTP/1.1 and an empty `Connection` header towards the upstream; both come from `nginx.conf` (`proxy_http_version 1.1`, `Connection` from the `$connection_upgrade` map, which is empty unless the client asked for an upgrade). The proxied locations deliberately set **no** `proxy_set_header`: one directive at that level would hide all of `nginx.conf`'s (`Host`, `X-Forwarded-*`).
 - **Retries:** `proxy_next_upstream error timeout` with at most 2 tries. A refused connection means the request never reached a replica, so trying another one is safe even for `POST`; once a request was sent, nginx repeats only idempotent methods (never `POST`, and `non_idempotent` is not set). "Idempotent by the HTTP spec" does not mean the application's handler is.
-- **Algorithm** is a platform setting, not a per-app one: `BULT_LB_ALGORITHM` = `round_robin` (default, no directive) | `least_conn` | `ip_hash` (sticky by client address). The control plane validates it at start.
+- **Algorithm** is a platform setting, not a per-app one: `BULT_LB_ALGORITHM` = `least_conn` (default) | `round_robin` (no directive) | `ip_hash` (sticky by client address). The control plane validates it at start. `least_conn` is the default because of the benchmark in `bench/`: same p50, about a third shorter p95/p99 with mixed request durations, and +38% throughput when one replica is slow (round-robin keeps sending it a third of the traffic).
 
 ## Path routes
 
