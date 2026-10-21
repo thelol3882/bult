@@ -82,6 +82,7 @@ class FakeNodes:
     def __init__(self, runners: dict[str, str] | None = None) -> None:
         self.addresses = dict(RUNNERS if runners is None else runners)
         self.not_ready: set[str] = set()
+        self.dead: set[str] = set()
 
     def add(self, name: str, address: str, ready: bool = True) -> None:
         self.addresses[name] = address
@@ -93,9 +94,18 @@ class FakeNodes:
         else:
             self.not_ready.add(name)
 
+    def set_dead(self, name: str, dead: bool = True) -> None:
+        """A node silent for so long that its replicas are rescheduled (it is not ready either)."""
+        if dead:
+            self.dead.add(name)
+            self.not_ready.add(name)
+        else:
+            self.dead.discard(name)
+            self.not_ready.discard(name)
+
     async def runners(self) -> list[RunnerNode]:
         return [
-            RunnerNode(name, addr, name not in self.not_ready)
+            RunnerNode(name, addr, name not in self.not_ready, name in self.dead)
             for name, addr in sorted(self.addresses.items())
         ]
 

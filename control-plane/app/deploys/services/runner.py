@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 PRESETS_DIR = Path(__file__).resolve().parents[3] / "presets"
 
 CONTAINER_PORT = 8000  # PORT convention: the platform sets it
+HEALTH_PATH_ENV = "BULT_HEALTH_PATH"  # reserved: users cannot set BULT_* variables
 DEFAULT_CPU_MILLICORES = 500
 DEFAULT_MEMORY_BYTES = 256 * 1024 * 1024
 
@@ -252,6 +253,37 @@ async def _ensure_replicas(
         raise error
 
 
+def replica_env(app: App, trusted_proxy: str) -> dict[str, str]:
+    """The environment of a replica: the app's variables plus the platform's."""
+    env = {
+        **app.env,
+        # Platform variables last: the user cannot override them.
+        "PORT": str(CONTAINER_PORT),
+        "FORWARDED_ALLOW_IPS": trusted_proxy,
+    }
+    if app.health_path:
+        env[HEALTH_PATH_ENV] = app.health_path  # read by the node's agent, which keeps it from the app
+    return env
+
+
+async def start_replica(
+    agents: Agents, node: str, deploy: Deploy, index: int, env: dict[str, str]
+) -> ReplicaResult:
+    """RunReplica of one slot of the deploy on `node` (idempotent on the replica id)."""
+    repository, _, digest = deploy.image.rpartition("@")
+    return await agents.run_replica(
+        node=node,
+        replica_id=replica_id(deploy.id, index),
+        app_id=deploy.app_name,
+        image_repository=repository,
+        image_digest=digest,
+        container_port=CONTAINER_PORT,
+        env=env,
+        cpu_millicores=DEFAULT_CPU_MILLICORES,
+        memory_bytes=DEFAULT_MEMORY_BYTES,
+    )
+
+
 async def place_replicas(
     agents: Agents,
     nodes: NodesFacade,
@@ -274,13 +306,7 @@ async def place_replicas(
     for r in own:
         app_counts[r.node] = app_counts.get(r.node, 0) + 1
 
-    repository, _, digest = deploy.image.rpartition("@")
-    env = {
-        **app.env,
-        # Platform variables last: the user cannot override them.
-        "PORT": str(CONTAINER_PORT),
-        "FORWARDED_ALLOW_IPS": trusted_proxy,
-    }
+    env = replica_env(app, trusted_proxy)
     failed_nodes: set[str] = set()
     last_error: Exception | None = None
 
@@ -295,17 +321,7 @@ async def place_replicas(
                     last_error = e
                 break
             try:
-                result = await agents.run_replica(
-                    node=node,
-                    replica_id=replica_id(deploy.id, index),
-                    app_id=deploy.app_name,
-                    image_repository=repository,
-                    image_digest=digest,
-                    container_port=CONTAINER_PORT,
-                    env=env,
-                    cpu_millicores=DEFAULT_CPU_MILLICORES,
-                    memory_bytes=DEFAULT_MEMORY_BYTES,
-                )
+                result = await start_replica(agents, node, deploy, index, env)
             except (grpc.aio.AioRpcError, UnknownNodeError) as e:
                 logger.warning(
                     "deploy %s: replica %d on %s failed: %r", deploy.id, index, node, e

@@ -22,8 +22,10 @@ from app.core.principal import Principal
 from app.deploys.errors import DeployInProgressError
 from app.deploys.repositories.deploys import ACTIVE_STATUSES, Deploy
 from app.deploys.repositories.replicas import Replica, ReplicaView
+from app.deploys.services.health import to_view
 from app.deploys.services.routing import current_routes, routing_state
 from app.deploys.services.runner import place_replicas, remove_replica_quietly
+from app.deploys.services.scheduler import pick_victims
 from app.deploys.uow import DeploysUoW
 from app.ingress.routes import RouteApplyError, RouteWriter
 from app.nodes.services.facade import NodesFacade
@@ -223,11 +225,16 @@ class DeployService:
             return Scaled(replicas, await self._view(deploy))
 
         deploy = running[0]
+        async with self._uow_factory() as uow:  # a scale gives crash-looping replicas another chance
+            if await uow.replicas.reset_crashloops(deploy.id):
+                await uow.commit()
+                rows = await uow.replicas.list_running([deploy.id])
         retired: list[Replica] = []
         if replicas > len(rows):
             await self._add_replicas(deploy, app, rows, replicas)
         elif replicas < len(rows):
-            retired = await self._retire_replicas(rows, replicas)
+            ready = {n.name for n in await self._nodes.runners() if n.ready}
+            retired = await self._retire_replicas(rows, replicas, ready)
 
         _ = await self._apps.set_replicas(app_name, replicas, principal)
         async with self._uow_factory() as uow:
@@ -271,9 +278,11 @@ class DeployService:
                 error,
             )
 
-    async def _retire_replicas(self, rows: list[Replica], target: int) -> list[Replica]:
-        """Mark the highest-numbered replicas removed; the caller removes the containers."""
-        victims = sorted(rows, key=lambda r: r.index, reverse=True)[: len(rows) - target]
+    async def _retire_replicas(
+        self, rows: list[Replica], target: int, ready: set[str]
+    ) -> list[Replica]:
+        """Mark the replicas to drop removed (see pick_victims); the caller removes the containers."""
+        victims = pick_victims(rows, len(rows) - target, ready)
         async with self._uow_factory() as uow:
             await uow.replicas.mark_removed(r.id for r in victims)
             await uow.commit()
@@ -454,11 +463,14 @@ class DeployService:
         async with self._uow_factory() as uow:
             rows = await uow.replicas.list_running(d.id for d in deploys)
         ready = {n.name: n.ready for n in await self._nodes.runners()}
+        now = _utcnow()
         by_deploy: dict[str, list[ReplicaView]] = {}
+        serving: dict[str, int] = {}
         for r in rows:
-            status = "running" if ready.get(r.node, False) else "unhealthy"
-            by_deploy.setdefault(r.deploy_id, []).append(
-                ReplicaView(r.index, r.node, r.host_port, status)
+            node_ready = ready.get(r.node, False)
+            by_deploy.setdefault(r.deploy_id, []).append(to_view(r, node_ready, now))
+            serving[r.deploy_id] = serving.get(r.deploy_id, 0) + (
+                r.serving and node_ready
             )
         views = []
         for d in deploys:
@@ -467,7 +479,7 @@ class DeployService:
                 replace(
                     d,
                     replicas=replicas,
-                    ready_replicas=sum(r.status == "running" for r in replicas),
+                    ready_replicas=serving.get(d.id, 0),
                 )
             )
         return views

@@ -20,7 +20,13 @@ from app.deploys.repositories.deploys import (
     Deploy,
     DeployStatus,
 )
-from app.deploys.repositories.replicas import Replica, ReplicaStatus
+from app.deploys.repositories.replicas import (
+    DEAD_STATES,
+    Replica,
+    ReplicaState,
+    ReplicaStatus,
+)
+from app.deploys.repositories.replicas import UPDATABLE_FIELDS as REPLICA_FIELDS
 
 
 class SqlDeployRepository:
@@ -233,10 +239,17 @@ class SqlReplicaRepository:
         self._session = session
 
     async def save(self, replica: Replica) -> bool:
+        # A replacement starts the slot over but keeps its history (failures, reason, tail).
         values = {
             "node": replica.node,
             "host_port": replica.host_port,
             "status": "running",
+            "state": "running",
+            "healthy": True,
+            "unhealthy_since": None,
+            "retry_at": None,
+            "tail_pending": False,
+            "placed_at": func.now(),
         }
         stmt = (
             insert(ReplicaModel)
@@ -290,6 +303,74 @@ class SqlReplicaRepository:
         )
         return [_replica_to_domain(row) for row in rows.all()]
 
+    async def list_on_node(self, node: str) -> list[Replica]:
+        rows = await self._session.scalars(
+            select(ReplicaModel)
+            .where(ReplicaModel.node == node, ReplicaModel.status == "running")
+            .order_by(ReplicaModel.id)
+        )
+        return [_replica_to_domain(row) for row in rows.all()]
+
+    async def update(
+        self, replica_id: str, *, node: str | None = None, **changes
+    ) -> Replica | None:
+        unknown = changes.keys() - REPLICA_FIELDS
+        if unknown:
+            raise TypeError(f"cannot update field(s): {', '.join(sorted(unknown))}")
+        stmt = (
+            update(ReplicaModel)
+            .where(ReplicaModel.id == replica_id, ReplicaModel.status == "running")
+            .values(**changes, updated_at=func.now())
+            .returning(ReplicaModel)
+        )
+        if node is not None:
+            stmt = stmt.where(ReplicaModel.node == node)
+        row = await self._session.scalar(stmt)
+        return None if row is None else _replica_to_domain(row)
+
+    async def rehome(
+        self, replica_id: str, node: str, host_port: int, now: datetime
+    ) -> bool:
+        result = await self._session.execute(
+            update(ReplicaModel)
+            .where(
+                ReplicaModel.id == replica_id,
+                ReplicaModel.status == "running",
+                ReplicaModel.state.in_(DEAD_STATES),
+            )
+            .values(
+                node=node,
+                host_port=host_port,
+                state="running",
+                healthy=True,
+                unhealthy_since=None,
+                retry_at=None,
+                tail_pending=False,
+                placed_at=now,
+                updated_at=func.now(),
+            )
+        )
+        assert isinstance(result, CursorResult)
+        return result.rowcount > 0
+
+    async def reset_crashloops(self, deploy_id: str) -> int:
+        result = await self._session.execute(
+            update(ReplicaModel)
+            .where(
+                ReplicaModel.deploy_id == deploy_id,
+                ReplicaModel.status == "running",
+                ReplicaModel.state == "crashloop",
+            )
+            .values(
+                state="exited",
+                failures=[],
+                retry_at=None,
+                updated_at=func.now(),
+            )
+        )
+        assert isinstance(result, CursorResult)
+        return result.rowcount
+
     async def mark_removed(self, replica_ids: Iterable[str]) -> None:
         ids = list(replica_ids)
         if not ids:
@@ -318,4 +399,14 @@ def _replica_to_domain(row: ReplicaModel) -> Replica:
         host_port=row.host_port,
         status=cast(ReplicaStatus, row.status),
         created_at=row.created_at,
+        state=cast(ReplicaState, row.state),
+        healthy=row.healthy,
+        exit_code=row.exit_code,
+        reason=row.reason,
+        log_tail=row.log_tail,
+        tail_pending=row.tail_pending,
+        unhealthy_since=row.unhealthy_since,
+        failures=tuple(row.failures),
+        retry_at=row.retry_at,
+        placed_at=row.placed_at,
     )

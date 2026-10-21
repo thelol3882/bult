@@ -3,6 +3,7 @@
 import asyncio
 import functools
 from collections.abc import Callable, Coroutine
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -625,6 +626,65 @@ async def test_replicas_roundtrip_counts_and_cascade(factory: async_sessionmaker
 
     async with SqlDeploysUoW(factory) as uow:
         assert await uow.replicas.list_all_running() == []  # the deploy took them along
+
+
+@db_test
+async def test_replica_health_columns_guarded_updates_and_a_replacement_keeping_history(
+    factory: async_sessionmaker,
+):
+    owner = await make_user(factory)
+    await make_app_named(factory, "hello", owner)
+    await add_deploy(factory, Deploy(id="d1", app_name="hello"))
+    died = datetime(2026, 10, 21, 12, 0, tzinfo=UTC)
+
+    async with SqlDeploysUoW(factory) as uow:
+        assert await uow.replicas.save(Replica("d1-r0", "d1", 0, "node-a", 20000))
+        row = await uow.replicas.update(
+            "d1-r0",
+            node="node-a",
+            state="exited",
+            healthy=False,
+            exit_code=1,
+            reason="exited with code 1",
+            log_tail="boom",
+            failures=(died,),
+            retry_at=died + timedelta(seconds=10),
+            tail_pending=True,
+        )
+        assert row is not None and row.failures == (died,) and row.placed_at is not None
+        # a heartbeat of another node must not write onto the row
+        assert await uow.replicas.update("d1-r0", node="node-b", healthy=True) is None
+        assert [r.id for r in await uow.replicas.list_on_node("node-a")] == ["d1-r0"]
+        assert await uow.replicas.list_on_node("node-b") == []
+
+        assert await uow.replicas.rehome("d1-r0", "node-b", 20009, died)
+        assert not await uow.replicas.rehome("d1-r0", "node-c", 1, died)  # already running
+        await uow.commit()
+
+    async with SqlDeploysUoW(factory) as uow:
+        [row] = await uow.replicas.list_running(["d1"])
+        assert (row.node, row.host_port, row.state, row.healthy) == ("node-b", 20009, "running", True)
+        assert (row.exit_code, row.log_tail, row.failures) == (1, "boom", (died,))
+        assert row.retry_at is None and not row.tail_pending and row.placed_at == died
+
+        await uow.replicas.update("d1-r0", state="crashloop")
+        assert await uow.replicas.reset_crashloops("d1") == 1
+        [row] = await uow.replicas.list_running(["d1"])
+        assert (row.state, row.failures) == ("exited", ())
+        await uow.commit()
+
+
+@db_test
+async def test_app_health_path_roundtrip(factory: async_sessionmaker):
+    owner = await make_user(factory)
+    async with SqlAppsUoW(factory) as uow:
+        await uow.apps.add(replace(make_app(owner), health_path="/healthz"))
+        await uow.commit()
+    async with SqlAppsUoW(factory) as uow:
+        app = await uow.apps.get("hello")
+        assert app is not None and app.health_path == "/healthz"
+        updated = await uow.apps.update("hello", health_path="")
+        assert updated is not None and updated.health_path == ""
 
 
 @db_test

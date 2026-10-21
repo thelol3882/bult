@@ -31,6 +31,8 @@ from app.deploys.routers import deploys as deploys_router
 from app.deploys.routers import lifecycle as lifecycle_router
 from app.deploys.services.deploys import DeployService
 from app.deploys.services.facade import DeploysFacade
+from app.deploys.services.health import HealthState, Observation, ReplicaHealthService
+from app.deploys.services.reconciler import Reconciler
 from app.deploys.services.reconcile import (
     fail_deploys_without_replica,
     remove_orphan_replicas,
@@ -47,7 +49,7 @@ from app.nodes.routers import internal as nodes_internal_router
 from app.nodes.routers import nodes as nodes_router
 from app.nodes.services.facade import NodesFacade
 from app.nodes.services.monitor import NodeMonitor
-from app.nodes.services.nodes import NodeService, ReplicaUsage
+from app.nodes.services.nodes import NodeService, ReplicaHealth, ReplicaUsage
 from app.nodes.uow import sql_nodes_uow_factory
 
 logger = logging.getLogger(__name__)
@@ -109,11 +111,24 @@ async def lifespan(app: FastAPI):
     )
     monitor = NodeMonitor(
         app.state.node_service,
-        on_change=lambda: _reapply_routes(app, apps_facade),
+        on_change=lambda: _reapply_routes_quietly(app, apps_facade),
         interval=settings.node_monitor_interval,
         initial_delay=settings.node_ttl_seconds,
     )
+    reconciler = Reconciler(
+        app.state.health_state,
+        app.state.deploys_uow_factory,
+        app.state.agents,
+        app.state.nodes,
+        apps_facade,
+        lambda what: _reapply_routes(app, apps_facade, what),
+        settings.trusted_proxy,
+        interval=settings.reconcile_interval,
+        initial_delay=settings.node_ttl_seconds,
+    )
     startup_check: asyncio.Task[None] | None = None
+    if settings.reconciler:
+        reconciler.start()
     if settings.deploy_worker:
         worker.start()
         startup_check = asyncio.create_task(_startup_check(app))
@@ -125,6 +140,7 @@ async def lifespan(app: FastAPI):
     yield
 
     await retention.stop()
+    await reconciler.stop()
     await monitor.stop()
     if startup_check is not None:
         startup_check.cancel()
@@ -134,8 +150,10 @@ async def lifespan(app: FastAPI):
     await app.state.db_engine.dispose()
 
 
-async def _reapply_routes(app: FastAPI, apps: AppsFacade) -> None:
-    """A node became unhealthy or came back: the routes follow."""
+async def _reapply_routes(
+    app: FastAPI, apps: AppsFacade, what: str = "node status change"
+) -> int | None:
+    """Render the routes again from the database and the nodes' health."""
     state = app.state
     service = build_deploy_service(
         state.deploys_uow_factory,
@@ -145,7 +163,29 @@ async def _reapply_routes(app: FastAPI, apps: AppsFacade) -> None:
         state.routes,
         state.settings,
     )
-    _ = await service.reapply_routes("node status change")
+    return await service.reapply_routes(what)
+
+
+async def _reapply_routes_quietly(app: FastAPI, apps: AppsFacade) -> None:
+    """A node became unhealthy or came back: the routes follow."""
+    _ = await _reapply_routes(app, apps)
+
+
+async def _record_health(
+    app: FastAPI, node: str, health: Sequence[ReplicaHealth], complete: bool
+) -> None:
+    """Hand a node's replica states to the deploys domain and wake the reconciler if needed."""
+    if not health and not complete:
+        return
+    state = app.state
+    service = ReplicaHealthService(state.deploys_uow_factory, state.health_state)
+    result = await service.record(
+        node, [Observation(**dataclasses.asdict(h)) for h in health], complete
+    )
+    if result.routes_changed:
+        state.health_state.signal.routes_changed()
+    for replica_id in result.garbage:
+        state.health_state.signal.collect(node, replica_id)
 
 
 async def _replica_counts(app: FastAPI) -> dict[str, int]:
@@ -235,6 +275,10 @@ def create_app() -> FastAPI:
     app.state.event_bus = _build_event_bus(app)
     app.state.replica_counts = lambda: _replica_counts(app)
     app.state.usage_sink = lambda node, usage: _store_usage(app, node, usage)
+    app.state.health_state = HealthState()
+    app.state.health_sink = lambda node, health, complete: _record_health(
+        app, node, health, complete
+    )
 
     app.add_middleware(TraceIdMiddleware)
     exception_handlers.register(app)

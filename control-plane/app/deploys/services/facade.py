@@ -39,11 +39,11 @@ class DeploysFacade:
         }
 
     async def ready_replicas(self, app_name: str) -> int:
-        """System read: replicas of the app's current running deploy on ready nodes."""
+        """System read: replicas of the app's current running deploy that run and are healthy, on ready nodes."""
         async with self._uow_factory() as uow:
             running = await uow.deploys.list_running(app_name)
             if not running:
                 return 0
             replicas = await uow.replicas.list_running([running[0].id])
         ready = {n.name for n in await self._nodes.runners() if n.ready}
-        return sum(r.node in ready for r in replicas)
+        return sum(r.serving and r.node in ready for r in replicas)

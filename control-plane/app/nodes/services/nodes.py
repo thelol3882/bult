@@ -12,7 +12,7 @@ from app.nodes.repositories.nodes import Node, NodeRole
 from app.nodes.services.tokens import NodeTokens
 from app.nodes.uow import NodesUoW
 
-NodeStatus = Literal["ready", "unhealthy"]
+NodeStatus = Literal["ready", "unhealthy", "dead"]
 
 
 def _utcnow() -> datetime:
@@ -31,6 +31,18 @@ class ReplicaUsage:
 
 
 @dataclass(frozen=True)
+class ReplicaHealth:
+    """State of one replica container, as its node saw it."""
+
+    replica_id: str
+    state: Literal["running", "exited", "oom"]
+    exit_code: int | None = None
+    oom_killed: bool = False
+    healthy: bool = True
+    finished_at: datetime | None = None
+
+
+@dataclass(frozen=True)
 class NodeReport:
     """What a node says about itself in a heartbeat."""
 
@@ -41,6 +53,8 @@ class NodeReport:
     cpus: int = 0
     memory_bytes: int = 0
     replicas: tuple[ReplicaUsage, ...] = ()  # absent in heartbeats of older agents and builders
+    health: tuple[ReplicaHealth, ...] = ()
+    reports_replicas: bool = False  # the list is complete: a replica missing from it is gone
 
 
 @dataclass(frozen=True)
@@ -63,6 +77,7 @@ class RunnerNode:
     name: str
     address: str
     ready: bool
+    dead: bool = False  # silent so long that its replicas are rescheduled
 
 
 class NodeService:
@@ -78,6 +93,7 @@ class NodeService:
         self._uow_factory = uow_factory
         self._tokens = NodeTokens(settings.node_tokens)
         self._ttl = settings.node_ttl_seconds
+        self._dead_after = settings.node_dead_seconds
         self._static_builder = settings.builder
         self._static_runners = settings.runners
         self._clock = clock
@@ -108,7 +124,9 @@ class NodeService:
 
     def status_of(self, node: Node) -> NodeStatus:
         silent = (self._clock() - node.last_seen_at).total_seconds()
-        return "ready" if silent <= self._ttl else "unhealthy"
+        if silent <= self._ttl:
+            return "ready"
+        return "unhealthy" if silent <= self._dead_after else "dead"
 
     async def views(self) -> list[NodeView]:
         """Registered nodes with their status (for the API)."""
@@ -126,8 +144,12 @@ class NodeService:
         ]
 
     async def statuses(self) -> dict[str, NodeStatus]:
-        """Status of every registered node, read fresh (for the monitor)."""
-        return {n.name: self.status_of(n) for n in await self._load(fresh=True)}
+        """Ready or unhealthy for every registered node, read fresh (for the monitor, which
+        only cares about routing: a dead node is unhealthy too)."""
+        return {
+            n.name: "ready" if self.status_of(n) == "ready" else "unhealthy"
+            for n in await self._load(fresh=True)
+        }
 
     # The directory: where the agents are. Registered nodes win; the static configuration
     # (BULT_BUILDER / BULT_RUNNERS) is used for a role only while no node of that role
@@ -137,7 +159,12 @@ class NodeService:
         registered = [n for n in await self._load() if n.runs_replicas]
         if registered:
             return [
-                RunnerNode(n.name, n.address, self.status_of(n) == "ready")
+                RunnerNode(
+                    n.name,
+                    n.address,
+                    self.status_of(n) == "ready",
+                    self.status_of(n) == "dead",
+                )
                 for n in registered
             ]
         return [RunnerNode(name, addr, True) for name, addr in self._static_runners.items()]

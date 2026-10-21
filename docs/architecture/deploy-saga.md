@@ -113,6 +113,10 @@ Deleting an app is also a saga across the same resources: the app's data, its ro
 
 The place where the compensations run is the `AppDeleted` handler (`app/deploys/handlers.py: on_app_deleted`): `AppService.delete` removes the app and publishes the event; the handler, delivered synchronously after commit and before the 204, forgets the app's deploys, re-applies the routes without it, then removes the app's replicas (route update and `RemoveReplica` are best effort and logged). The replicas are found by asking every runner node (`ListReplicas`, filtered by `app_id`), not from deploy rows: the `ON DELETE CASCADE` foreign key has already removed the rows at commit. This also removes superseded replicas left by earlier redeploys; a node that cannot be reached is logged and skipped. A deploy still in flight notices on its own that its row is gone (its fenced write matches nothing and the row is missing) and removes its replica itself (see `runner.py`).
 
+## After `running`: the reconciler
+
+The saga ends when the deploy is `running`; keeping its replicas alive is a different loop (the reconciler, `health.md`) that works on the same rows. They do not fight: a replacement is a guarded update of a row that must still be a running, dead one, and a container it starts for a slot that was retired meanwhile is removed again (the same compensation as above). Heartbeat garbage collection removes containers of finished deploys with a 15 s grace, so the replica a saga has just started (container first, row right after) is not taken for a stray; a startup check that finds a `running` deploy with no replica at all still fails it, while a replica that exists but is dead is the reconciler's business.
+
 ## Why not a distributed transaction
 
 | | 2PC / XA | Saga |

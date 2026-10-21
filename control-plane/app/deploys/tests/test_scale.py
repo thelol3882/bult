@@ -276,9 +276,9 @@ def test_a_deploy_shows_its_replicas_and_how_many_are_ready(
     body = client.get("/apps/blog/deploys/d1").json()
 
     assert (body["desired_replicas"], body["ready_replicas"]) == (2, 2)
-    assert body["replicas"] == [
-        {"index": 0, "node": "node-a", "host_port": 30001, "status": "running"},
-        {"index": 1, "node": "node-b", "host_port": 30002, "status": "running"},
+    assert [(r["index"], r["node"], r["host_port"], r["status"]) for r in body["replicas"]] == [
+        (0, "node-a", 30001, "running"),
+        (1, "node-b", 30002, "running"),
     ]
 
     two_nodes.set_ready("node-b", False)
@@ -364,3 +364,87 @@ def test_start_after_stop_uses_the_default_of_one_replica(
     assert started.status_code == 202
     assert started.json()["desired_replicas"] == 1
     assert client.get("/apps/blog").json()["replicas"] == 1
+
+
+def test_scaling_down_drops_the_dead_replica_not_the_highest_index(
+    client: TestClient,
+    two_nodes: FakeNodes,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+):
+    _running_with(deploys_uow, agents, [("node-a", 30001), ("node-b", 30002), ("node-a", 30003)])
+    asyncio.run(deploys_uow.replicas.update("d1-r0", state="exited", healthy=False))
+
+    assert _scale(client, 2).status_code == 200
+
+    assert _rows(deploys_uow) == [(1, "node-b"), (2, "node-a")]
+
+
+def test_scaling_down_takes_from_the_busiest_node(
+    client: TestClient,
+    two_nodes: FakeNodes,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+):
+    _running_with(deploys_uow, agents, [("node-a", 30001), ("node-b", 30002), ("node-b", 30003)])
+
+    assert _scale(client, 2).status_code == 200
+
+    assert sorted(n for _, n in _rows(deploys_uow)) == ["node-a", "node-b"]
+
+
+def test_a_scale_gives_a_crash_looping_replica_a_fresh_start(
+    client: TestClient,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+):
+    _running_with(deploys_uow, agents, [("node-a", 30001)])
+    asyncio.run(deploys_uow.replicas.update("d1-r0", state="crashloop", failures=()))
+
+    assert _scale(client, 1).status_code == 200
+
+    [row] = asyncio.run(deploys_uow.replicas.list_running(["d1"]))
+    assert row.state == "exited"  # the reconciler replaces it on its next round
+
+
+def test_an_unhealthy_replica_is_not_ready_and_shows_why(
+    client: TestClient,
+    two_nodes: FakeNodes,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+):
+    _running_with(deploys_uow, agents, [("node-a", 30001), ("node-b", 30002)])
+    asyncio.run(deploys_uow.replicas.update("d1-r1", healthy=False))
+
+    body = client.get("/apps/blog/deploys/d1").json()
+
+    assert (body["desired_replicas"], body["ready_replicas"]) == (2, 1)
+    assert [(r["status"], r["reason"]) for r in body["replicas"]] == [
+        ("running", ""),
+        ("unhealthy", "health check failed"),
+    ]
+
+
+def test_a_crash_looping_replica_shows_its_exit_code_and_log_tail(
+    client: TestClient,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+):
+    _running_with(deploys_uow, agents, [("node-a", 30001)])
+    asyncio.run(
+        deploys_uow.replicas.update(
+            "d1-r0",
+            state="crashloop",
+            exit_code=3,
+            reason="crash loop: exited with code 3",
+            log_tail="Traceback\nboom",
+        )
+    )
+
+    [replica] = client.get("/apps/blog/deploys/d1").json()["replicas"]
+
+    assert (replica["status"], replica["exit_code"], replica["log_tail"]) == (
+        "crashloop",
+        3,
+        ["Traceback", "boom"],
+    )

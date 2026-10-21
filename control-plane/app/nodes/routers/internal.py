@@ -6,9 +6,9 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
-from app.nodes.deps import NodeServiceDep, UsageSinkDep
+from app.nodes.deps import HealthSinkDep, NodeServiceDep, UsageSinkDep
 from app.nodes.schemas.nodes import HeartbeatIn
-from app.nodes.services.nodes import NodeReport, ReplicaUsage
+from app.nodes.services.nodes import NodeReport
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +22,12 @@ async def heartbeat(
     payload: HeartbeatIn,
     service: NodeServiceDep,
     usage_sink: UsageSinkDep,
+    health_sink: HealthSinkDep,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer)],
 ) -> None:
     token = credentials.credentials if credentials is not None else None
-    usage = tuple(ReplicaUsage(**r.model_dump()) for r in payload.replicas)
+    usage = tuple(u for r in payload.replicas if (u := r.usage()) is not None)
+    health = tuple(h for r in payload.replicas if (h := r.health()) is not None)
     await service.heartbeat(
         NodeReport(
             name=payload.name,
@@ -35,6 +37,8 @@ async def heartbeat(
             cpus=payload.capacity.cpus,
             memory_bytes=payload.capacity.memory_bytes,
             replicas=usage,
+            health=health,
+            reports_replicas=payload.reports_replicas,
         ),
         token,
     )
@@ -43,3 +47,7 @@ async def heartbeat(
         await usage_sink(payload.name, usage)
     except Exception:
         logger.exception("storing replica metrics of node %s failed", payload.name)
+    try:
+        await health_sink(payload.name, health, payload.reports_replicas)
+    except Exception:
+        logger.exception("recording replica health of node %s failed", payload.name)

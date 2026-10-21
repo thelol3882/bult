@@ -69,6 +69,18 @@ class EnvUpdate(BaseModel):
         return env
 
 
+HEALTH_PATH_REGEX = re.compile(r"^/[A-Za-z0-9._~/?=&%-]{0,199}$")
+HEALTH_PATH_MESSAGE = (
+    "Use a path starting with '/', up to 200 characters: letters, digits and . _ ~ - / ? = & %."
+)
+
+
+def _validate_health_path(value: str) -> str:
+    if value and not HEALTH_PATH_REGEX.fullmatch(value):
+        raise ValueError(HEALTH_PATH_MESSAGE)
+    return value
+
+
 ROUTE_PATH_REGEX = re.compile(r"^/[a-z0-9][a-z0-9_-]*(/[a-z0-9][a-z0-9_-]*)*$")
 MAX_ROUTES = 5
 
@@ -119,6 +131,12 @@ class AppUpdate(BaseModel):
     repo_url: HttpUrl | None = None
     branch: str | None = None
     subdir: str | None = None
+    health_path: str | None = None  # "" clears it: back to a TCP check
+
+    @field_validator("health_path")
+    @classmethod
+    def validate_health_path(cls, value: str | None) -> str | None:
+        return None if value is None else _validate_health_path(value)
 
     @field_validator("*", mode="before")
     @classmethod
@@ -152,6 +170,12 @@ class AppCreate(BaseModel):
     repo_url: HttpUrl
     branch: str = "main"
     subdir: str = ""
+    health_path: str = ""
+
+    @field_validator("health_path")
+    @classmethod
+    def validate_health_path(cls, value: str) -> str:
+        return _validate_health_path(value)
 
     @field_validator("name", mode="before")
     @classmethod
@@ -186,6 +210,7 @@ class AppOut(BaseModel):
     repo_url: str
     branch: str
     subdir: str
+    health_path: str
     created_at: datetime
     url: str  # built by AppService.url
     replicas: int
@@ -200,6 +225,7 @@ class AppOut(BaseModel):
             repo_url=app.repo_url,
             branch=app.branch,
             subdir=app.subdir,
+            health_path=app.health_path,
             created_at=app.created_at,  # pyright: ignore[reportArgumentType]
             url=url,
             replicas=app.replicas,

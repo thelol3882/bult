@@ -39,6 +39,7 @@ class AppService:
                 repo_url=str(data.repo_url),
                 branch=data.branch,
                 subdir=data.subdir,
+                health_path=data.health_path,
                 owner_id=principal.id,
             )
             app = await uow.apps.add(app)

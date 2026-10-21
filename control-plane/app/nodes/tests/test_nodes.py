@@ -174,3 +174,20 @@ def test_the_address_cache_is_short_lived_and_dropped_by_a_heartbeat(
     # ...but a heartbeat through the service takes effect at once.
     _beat(service, address="10.0.0.7:50051")
     assert asyncio.run(service.runner_address("node-a")) == "10.0.0.7:50051"
+
+
+def test_a_node_silent_for_60_seconds_is_dead_and_only_then(
+    node_service: NodeService, clock: FakeClock
+):
+    _beat(node_service)
+
+    clock.advance(60)
+    [node] = asyncio.run(node_service.views())
+    assert node.status == "unhealthy"
+    clock.advance(0.5)
+    [node] = asyncio.run(node_service.views())
+    assert node.status == "dead"
+    [runner] = asyncio.run(node_service.runners())
+    assert (runner.ready, runner.dead) == (False, True)
+    # the routing monitor only distinguishes ready from not ready
+    assert asyncio.run(node_service.statuses()) == {"node-a": "unhealthy"}

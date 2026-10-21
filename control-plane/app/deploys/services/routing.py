@@ -24,7 +24,8 @@ async def current_routes(
     """The routes the database asks for: running deploys on ready nodes
     (`ignore_health`: on every known node)."""
     deploys = await uow.deploys.list_all()
-    replicas = await uow.replicas.list_all_running()
+    # Only replicas that run and pass their probe receive traffic.
+    replicas = [r for r in await uow.replicas.list_all_running() if r.serving]
     node_ips, routable = await node_maps(nodes)
     if ignore_health:
         routable = set(node_ips)

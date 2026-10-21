@@ -89,3 +89,45 @@ def test_values_never_reach_the_logs(
 
     assert SECRET in agents.run_calls[0]["env"].values()  # the value did reach the node...
     assert SECRET not in caplog.text  # ...and nothing else
+
+
+def test_the_health_path_reaches_the_agent_as_a_reserved_variable(
+    client: TestClient,
+    settings: Settings,
+    apps_uow: InMemoryAppsUoW,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+    routes: FakeRoutes,
+):
+    assert client.patch("/apps/blog", json={"health_path": "/healthz"}).json()["health_path"] == "/healthz"
+
+    _deploy_with_worker(client, settings, apps_uow, deploys_uow, agents, routes)
+
+    [call] = agents.run_calls
+    assert call["env"]["BULT_HEALTH_PATH"] == "/healthz"
+
+
+def test_without_a_health_path_the_agent_gets_nothing_extra(
+    client: TestClient,
+    settings: Settings,
+    apps_uow: InMemoryAppsUoW,
+    deploys_uow: InMemoryDeploysUoW,
+    agents: FakeAgentClients,
+    routes: FakeRoutes,
+):
+    _deploy_with_worker(client, settings, apps_uow, deploys_uow, agents, routes)
+
+    assert "BULT_HEALTH_PATH" not in agents.run_calls[0]["env"]
+
+
+@pytest.mark.parametrize("bad", ["healthz", "/a b", "/x\n", "/" + "a" * 200, "/<script>"])
+def test_a_bad_health_path_is_a_field_error(client: TestClient, bad: str):
+    resp = client.patch("/apps/blog", json={"health_path": bad})
+
+    assert resp.status_code == 422
+
+
+def test_an_empty_health_path_clears_it(client: TestClient):
+    client.patch("/apps/blog", json={"health_path": "/up?x=1"})
+
+    assert client.patch("/apps/blog", json={"health_path": ""}).json()["health_path"] == ""

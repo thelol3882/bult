@@ -11,14 +11,21 @@ from app.deploys.repositories.deploys import DeployStatus
 
 
 class ReplicaOut(BaseModel):
-    """One running container of a deploy; `unhealthy` means its node stopped reporting."""
+    """One container of a deploy. `unhealthy`: it fails its health check or its node stopped
+    reporting; `crashloop`: replacing it did not help, it waits for a new deploy or a scale;
+    `lost`: its node is dead and a replacement is being placed."""
 
     model_config = ConfigDict(from_attributes=True)
 
     index: int
     node: str
     host_port: int
-    status: Literal["running", "unhealthy"]
+    status: Literal["running", "unhealthy", "exited", "oom", "crashloop", "lost"]
+    exit_code: int | None  # of the last death
+    recent_failures: int  # deaths in the last 10 minutes
+    reason: str  # why it is not serving, "" while it is
+    log_tail: list[str]  # the app's last output at its last death
+    retry_at: datetime | None  # when a dead replica is replaced
 
 
 class DeployOut(BaseModel):
@@ -32,7 +39,7 @@ class DeployOut(BaseModel):
     commit_sha: str
     image: str
     desired_replicas: int
-    ready_replicas: int  # running replicas on ready nodes: shown as ready/desired
+    ready_replicas: int  # replicas that run and are healthy, on ready nodes: shown as ready/desired
     replicas: list[ReplicaOut]  # the running ones
     error: str
     created_at: datetime

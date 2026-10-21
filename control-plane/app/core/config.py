@@ -7,7 +7,7 @@ every problem, so the API refuses to start instead of failing on the first reque
 import json
 from typing import Annotated, Any, Literal
 
-from pydantic import Field, SecretStr, field_validator
+from pydantic import Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 
@@ -42,12 +42,22 @@ class Settings(BaseSettings):
     # may only report itself under the name its token is bound to.
     node_tokens: Annotated[dict[str, SecretStr], NoDecode] = Field(default_factory=dict)
     node_ttl_seconds: float = Field(default=15.0, gt=0)  # silent for longer -> unhealthy
+    # Silent for longer -> dead: its replicas are rescheduled on other nodes.
+    node_dead_seconds: float = Field(default=60.0, gt=0)
     node_monitor: bool = True  # BULT_NODE_MONITOR=false: no status monitor (API-only tests)
     node_monitor_interval: float = Field(default=3.0, gt=0)
     # BULT_METRICS_RETENTION_HOURS: how long replica CPU/memory samples are kept.
     metrics_retention_hours: float = Field(default=24.0, gt=0)
     metrics_retention_interval: float = Field(default=300.0, gt=0)  # seconds between purges
     metrics_retention: bool = True  # BULT_METRICS_RETENTION=false: no purge loop (API-only tests)
+    reconciler: bool = True  # BULT_RECONCILER=false: no replica reconciler (API-only tests)
+    reconcile_interval: float = Field(default=5.0, gt=0)
+
+    @model_validator(mode="after")
+    def _dead_after_unhealthy(self) -> "Settings":
+        if self.node_dead_seconds <= self.node_ttl_seconds:
+            raise ValueError("node_dead_seconds must be greater than node_ttl_seconds")
+        return self
 
     @field_validator("node_tokens", mode="before")
     @classmethod

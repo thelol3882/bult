@@ -25,6 +25,7 @@ class App:
     repo_url: str
     branch: str
     subdir: str
+    health_path: str = ""  # "" = a TCP check of the port
     owner_id: UUID | None = None
     id: UUID | None = None
     created_at: datetime | None = None

@@ -17,6 +17,7 @@ class AppModel(UUIDv7PkMixin, TimestampMixin, Base):
     repo_url: Mapped[str] = mapped_column(String(), nullable=False)
     branch: Mapped[str] = mapped_column(String(), nullable=False)
     subdir: Mapped[str] = mapped_column(String(), server_default="")
+    health_path: Mapped[str] = mapped_column(String(), server_default="")
     replicas: Mapped[int] = mapped_column(server_default="1")  # desired: 0 = stopped, max 5
     # Write-only for the API: only the keys are ever returned.
     env: Mapped[dict[str, str]] = mapped_column(
