@@ -16,6 +16,9 @@ services:
     env_file:
       - path: ../.bult/node-tokens.env
         required: false
+      # BULT_LB_ALGORITHM: written by `scripts/dev.py lb <algorithm>`; default round_robin.
+      - path: ../.bult/lb.env
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://bult:bult@postgres:5432/bult
       WATCHFILES_FORCE_POLLING: "true"

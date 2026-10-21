@@ -20,6 +20,8 @@ Configuration (environment variables, all optional):
     BULT_GO_DOCKER=1   build/test the agent in Docker even if `go` is installed
     DATABASE_URL       database for the db-* commands (default: the compose Postgres on localhost)
 
+`lb <round_robin|least_conn|ip_hash>` switches the ingress balancing algorithm (see cmd_lb).
+
 Control plane commands need `uv`; they start the compose Postgres when it is not running.
 
 `smoke` runs scripts/smoke.py against a running stack (after `demo-up`): register, deploy,
@@ -87,6 +89,9 @@ AGENT_PORT = 50051
 BULT_DIR = ROOT / ".bult"
 NODE_SECRET_FILE = BULT_DIR / "node-secret"
 NODE_TOKENS_ENV = BULT_DIR / "node-tokens.env"
+# BULT_LB_ALGORITHM for the API, written by `lb` (optional env_file in control-plane/compose.yaml).
+LB_ENV = BULT_DIR / "lb.env"
+LB_ALGORITHMS = ("round_robin", "least_conn", "ip_hash")
 GOARCH = os.environ.get("BULT_GOARCH") or host_goarch()
 
 
@@ -343,6 +348,43 @@ def cmd_nodes(_: argparse.Namespace) -> None:
     run(["multipass", "list"])
 
 
+def ingress_routes() -> tuple[int, str]:
+    """(generation, all rendered config) the ingress runs now; generation 0 when there is none."""
+    result = subprocess.run(
+        ["docker", "compose", "exec", "-T", "ingress", "sh", "-c",
+         "readlink /routes/current; cat /routes/current/*.conf"],
+        cwd=ROOT, text=True, capture_output=True,
+    )
+    out = result.stdout if result.returncode == 0 else ""
+    head, _, conf = out.partition("\n")
+    return (int(head.rsplit("/", 1)[-1]) if head.rsplit("/", 1)[-1].isdigit() else 0), conf
+
+
+def lb_applied(conf: str, algorithm: str) -> bool:
+    """Does the rendered config balance with `algorithm`? round_robin is the absence of a directive."""
+    present = {a for a in LB_ALGORITHMS[1:] if f"\n    {a};\n" in conf}
+    return present == (set() if algorithm == "round_robin" else {algorithm})
+
+
+def cmd_lb(args: argparse.Namespace) -> None:
+    """Switch the ingress balancing algorithm: restart the API, wait for the new routes."""
+    ensure_node_tokens()
+    BULT_DIR.mkdir(exist_ok=True)
+    LB_ENV.write_text(f"BULT_LB_ALGORITHM={args.algorithm}\n")
+    before, _ = ingress_routes()
+    started = time.monotonic()
+    # Changed env_file content recreates the container; the API re-renders the routes on start.
+    run(["docker", "compose", "up", "-d", "--no-deps", "api"], cwd=ROOT)
+    while time.monotonic() - started < args.timeout:
+        generation, conf = ingress_routes()
+        if generation > before and lb_applied(conf, args.algorithm):
+            print(f"{args.algorithm} applied (generation {generation}) "
+                  f"in {time.monotonic() - started:.0f}s", flush=True)
+            return
+        time.sleep(1)
+    sys.exit(f"{args.algorithm} was not applied in {args.timeout:.0f}s: docker compose logs api")
+
+
 def cmd_up(_: argparse.Namespace) -> None:
     """Start the host stack (registry + control plane) with Docker Compose."""
     ensure_node_tokens()
@@ -481,6 +523,7 @@ COMMANDS = {
     "demo-up": cmd_demo_up,
     "demo-down": cmd_demo_down,
     "smoke": cmd_smoke,
+    "lb": cmd_lb,
     "db-up": cmd_db_up,
     "migrate": cmd_migrate,
     "makemigrations": cmd_makemigrations,
@@ -509,6 +552,9 @@ def main() -> None:
             p.add_argument("revision", nargs="?", default="-1")
         if name == "makemigrations":
             p.add_argument("-m", "--message", required=True, help='e.g. "users"')
+        if name == "lb":
+            p.add_argument("algorithm", choices=LB_ALGORITHMS)
+            p.add_argument("--timeout", type=float, default=90, help="seconds to wait (default 90)")
         if name == "smoke":
             p.add_argument("smoke_args", nargs=argparse.REMAINDER, help="passed to smoke.py, e.g. --keep")
         if name == "cp-test":
