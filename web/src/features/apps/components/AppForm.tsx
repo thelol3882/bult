@@ -4,7 +4,12 @@ import { useRouter } from 'next/navigation';
 import { Button, Card, Group, SegmentedControl, Stack, TextInput, Text } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useCreateApp } from '../hooks/useCreateApp';
-import { validateAppName, validateRepoUrl } from '../services/validators';
+import {
+    HEALTH_PATH_HELP,
+    validateAppName,
+    validateHealthPath,
+    validateRepoUrl,
+} from '../services/validators';
 import type { AppCreate } from '../types';
 
 export function AppForm() {
@@ -13,10 +18,18 @@ export function AppForm() {
 
     const form = useForm<AppCreate>({
         mode: 'controlled',
-        initialValues: { name: '', preset: 'fastapi', repo_url: '', branch: 'main', subdir: '' },
+        initialValues: {
+            name: '',
+            preset: 'fastapi',
+            repo_url: '',
+            branch: 'main',
+            subdir: '',
+            health_path: '',
+        },
         validate: {
             name: validateAppName,
             repo_url: validateRepoUrl,
+            health_path: (value) => validateHealthPath(value ?? ''),
             branch: (value) => (value.trim() ? null : 'Branch is required'),
         },
     });
@@ -27,6 +40,7 @@ export function AppForm() {
             repo_url: values.repo_url.trim(),
             branch: values.branch.trim(),
             subdir: values.subdir.trim(),
+            health_path: (values.health_path ?? '').trim(),
         });
         if (result.fieldErrors) form.setErrors(result.fieldErrors);
         if (result.app) router.push(`/apps/${result.app.name}`);
@@ -82,6 +96,13 @@ export function AppForm() {
                             {...form.getInputProps('subdir')}
                         />
                     </Group>
+                    <TextInput
+                        label="Health check path"
+                        placeholder="/healthz"
+                        description={HEALTH_PATH_HELP}
+                        autoComplete="off"
+                        {...form.getInputProps('health_path')}
+                    />
                     <Group justify="flex-end" mt="xs">
                         <Button variant="default" onClick={() => router.push('/apps')}>
                             Cancel

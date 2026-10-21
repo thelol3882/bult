@@ -24,3 +24,17 @@ export function validateRepoUrl(value: string): string | null {
         return 'Enter a valid URL, e.g. https://github.com/user/repo';
     }
 }
+
+export const HEALTH_PATH_HELP = "Empty = TCP check on the app's port. 2xx/3xx = healthy.";
+
+// Mirrors the API: starts with "/", at most 200 characters from this set; empty = TCP check.
+const HEALTH_PATH_REGEX = /^\/[A-Za-z0-9._~\-/?=&%]*$/;
+
+export function validateHealthPath(value: string): string | null {
+    const path = value.trim();
+    if (path === '') return null;
+    if (path.length > 200) return 'Path must be at most 200 characters';
+    if (!path.startsWith('/')) return 'Path must start with "/"';
+    if (!HEALTH_PATH_REGEX.test(path)) return 'Use only letters, digits and . _ ~ - / ? = & %';
+    return null;
+}

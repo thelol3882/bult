@@ -12,6 +12,8 @@ export interface BultApp {
     repo_url: string;
     branch: string;
     subdir: string;
+    /** HTTP path probed for health; empty = TCP check on the app's port. */
+    health_path: string;
     created_at: string;
     url: string;
     /** Desired replicas: 0 = stopped, 1 to 5 = running. */
@@ -27,6 +29,8 @@ export interface AppCreate {
     repo_url: string;
     branch: string;
     subdir: string;
+    /** Empty = TCP check; omitted keeps the server default. */
+    health_path?: string;
 }
 
 /** Variable name -> value. The API never returns values. */

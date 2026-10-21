@@ -1,4 +1,4 @@
-export type NodeStatus = 'ready' | 'unhealthy';
+export type NodeStatus = 'ready' | 'unhealthy' | 'dead';
 export type NodeRole = 'builder' | 'runner' | 'both';
 
 export interface PlatformNode {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { validateAppName, validateRepoUrl } from './validators';
+import { validateAppName, validateHealthPath, validateRepoUrl } from './validators';
 
 describe('validateAppName', () => {
     it.each(['blog', 'a', 'my-app-2', '9lives', 'a'.repeat(63)])('accepts %s', (name) => {
@@ -27,5 +27,25 @@ describe('validateRepoUrl', () => {
         expect(validateRepoUrl('http://github.com/a/b')).toMatch(/https/);
         expect(validateRepoUrl('git@github.com:a/b.git')).not.toBeNull();
         expect(validateRepoUrl('')).toMatch(/required/);
+    });
+});
+
+describe('validateHealthPath', () => {
+    it.each(['', '/', '/healthz', '/api/v1/health?full=1&x=a%20b', '/a.b_c~d-e'])(
+        'accepts %j',
+        (path) => {
+            expect(validateHealthPath(path)).toBeNull();
+        },
+    );
+
+    it('rejects a path that does not start with a slash', () => {
+        expect(validateHealthPath('healthz')).toMatch(/start with/);
+    });
+
+    it('rejects characters outside the allowed set and long paths', () => {
+        expect(validateHealthPath('/a b')).toMatch(/Use only/);
+        expect(validateHealthPath('/<script>')).toMatch(/Use only/);
+        expect(validateHealthPath('/' + 'a'.repeat(200))).toMatch(/200/);
+        expect(validateHealthPath('/' + 'a'.repeat(199))).toBeNull();
     });
 });

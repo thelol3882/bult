@@ -1,4 +1,4 @@
-import type { NodeRole } from '../types';
+import type { NodeRole, NodeStatus } from '../types';
 
 const GIB = 1024 ** 3;
 
@@ -32,3 +32,10 @@ export function lastSeenLabel(iso: string, now: number = Date.now()): string {
     const hours = Math.floor(minutes / 60);
     return hours < 48 ? `${hours} h ago` : `${Math.floor(hours / 24)} d ago`;
 }
+
+// dead (silent for 60 s, its replicas are rescheduled) is darker than unhealthy.
+export const NODE_STATUS: Record<NodeStatus, { label: string; color: string }> = {
+    ready: { label: 'Ready', color: 'green' },
+    unhealthy: { label: 'Unhealthy', color: 'red' },
+    dead: { label: 'Dead', color: 'red.9' },
+};

@@ -1,13 +1,28 @@
 import type { DeployStatus } from '@/shared/types';
 
-export type ReplicaStatus = 'running' | 'unhealthy';
+/**
+ * running: serving. unhealthy: failing its health check or its node stopped reporting.
+ * exited / oom: the container died and is replaced after a backoff. crashloop: the platform
+ * gave up replacing it. lost: its node died and a replacement is being scheduled.
+ */
+export type ReplicaStatus = 'running' | 'unhealthy' | 'exited' | 'oom' | 'crashloop' | 'lost';
 
-/** One running container of a deploy; `unhealthy`: its node stopped reporting. */
+/** One container of a deploy, with what is known about its last failure. */
 export interface DeployReplica {
     index: number;
     node: string;
     host_port: number;
     status: ReplicaStatus;
+    /** Exit code of the last death; null while it never died. */
+    exit_code: number | null;
+    /** Failures in the recent window (the platform gives up after 5 in 10 minutes). */
+    recent_failures: number;
+    /** User-facing cause such as "exited with code 1"; empty when healthy. */
+    reason: string;
+    /** Last lines of the app's own output captured at the last failure; may be empty. */
+    log_tail: string[];
+    /** When the platform tries again (ISO); null when no restart is scheduled. */
+    retry_at: string | null;
 }
 
 export interface Deploy {
@@ -17,9 +32,9 @@ export interface Deploy {
     commit_sha: string;
     image: string;
     desired_replicas: number;
-    /** Running replicas on ready nodes: shown as ready/desired. */
+    /** Running and healthy replicas on ready nodes: shown as ready/desired. */
     ready_replicas: number;
-    /** The running replicas, by index. */
+    /** The replicas, by index. */
     replicas: DeployReplica[];
     error: string;
     created_at: string;

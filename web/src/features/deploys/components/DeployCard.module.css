@@ -76,18 +76,7 @@
     word-break: break-word;
 }
 
-.replicas {
-    margin: 0;
-    padding: 0 20px 12px;
-    list-style: none;
-}
-
-.replicas li {
-    display: grid;
-    grid-template-columns: 36px minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: center;
-    padding: 8px 0;
-    border-top: 1px dashed var(--slate-2);
-    font-size: 13px;
+.degraded {
+    color: var(--mantine-color-orange-8);
+    font-weight: 600;
 }

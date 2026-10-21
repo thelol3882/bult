@@ -1,4 +1,5 @@
 import { isDeployActive, type DeployStatus } from '@/shared/types';
+import type { DeployReplica, ReplicaStatus } from '../types';
 
 export const MAX_REPLICAS = 5;
 
@@ -42,3 +43,60 @@ const SCALE_ERRORS: Record<string, string> = {
 /** User-facing text for the errors a scale request gives; undefined for any other code. */
 export const scaleErrorMessage = (code: string | undefined): string | undefined =>
     code === undefined ? undefined : SCALE_ERRORS[code];
+
+interface ReplicaStatusMeta {
+    label: string;
+    /** Mantine color name for the badge. */
+    color: string;
+    /** Short hint when the status itself is all the user gets (no reason from the API). */
+    hint: string;
+}
+
+export const REPLICA_STATUS: Record<ReplicaStatus, ReplicaStatusMeta> = {
+    running: { label: 'Running', color: 'green', hint: 'Serving traffic.' },
+    unhealthy: {
+        label: 'Unhealthy',
+        color: 'yellow',
+        hint: 'Running but failing its health check, or its node stopped reporting.',
+    },
+    exited: { label: 'Exited', color: 'orange', hint: 'The container died; it will be replaced.' },
+    oom: { label: 'Out of memory', color: 'grape', hint: 'Killed for running out of memory.' },
+    crashloop: {
+        label: 'Crash loop',
+        color: 'red',
+        hint: 'Replaced too often; the platform gave up until the next deploy, scale or start.',
+    },
+    lost: {
+        label: 'Node lost',
+        color: 'gray',
+        hint: 'Its node died; a replacement is being scheduled.',
+    },
+};
+
+/** Seconds from `now` until an ISO timestamp (the API may send naive UTC); negative when past. */
+function secondsUntil(iso: string, now: number): number {
+    const hasZone = /(Z|[+-]\d{2}:?\d{2})$/.test(iso);
+    return Math.round((Date.parse(hasZone ? iso : `${iso}Z`) - now) / 1000);
+}
+
+/** "restarting in 20 s"; null when no restart is scheduled or its time has passed. */
+export function retryLabel(retryAt: string | null, now: number = Date.now()): string | null {
+    if (retryAt === null) return null;
+    const seconds = secondsUntil(retryAt, now);
+    if (seconds <= 0) return null;
+    if (seconds < 60) return `restarting in ${seconds} s`;
+    return `restarting in ${Math.ceil(seconds / 60)} min`;
+}
+
+/** The one line shown next to the badge: the API's reason, else the generic hint for the status. */
+export const replicaHint = (r: DeployReplica): string =>
+    r.reason || (r.status === 'running' ? '' : REPLICA_STATUS[r.status].hint);
+
+/** A crashloop always has a panel; exited and oom have one when there is output to show. */
+export function hasFailureDetails(r: DeployReplica): boolean {
+    if (r.status === 'crashloop') return true;
+    return (r.status === 'exited' || r.status === 'oom') && r.log_tail.length > 0;
+}
+
+/** Ready is below desired: some replica is not serving. */
+export const isDegraded = (ready: number, desired: number): boolean => ready < desired;

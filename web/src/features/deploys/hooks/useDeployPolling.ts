@@ -8,10 +8,10 @@ import { useAppDispatch, useAppSelector } from '@/store/hooks';
 import { deployListTag, deploysApi, useGetDeployQuery } from '../api/deploysApi';
 
 const POLL_MS = 2000;
-// A running deploy still changes: a node can go unhealthy, a scale adds replicas.
-const RUNNING_POLL_MS = 10_000;
+// A running deploy still changes: a replica fails its health check, a node dies, a scale adds replicas.
+const RUNNING_POLL_MS = 5000;
 
-/** Polls a deploy every 2 s while it is in progress, every 10 s while it runs, never once final. */
+/** Polls a deploy every 2 s while it is in progress, every 5 s while it runs, never once final. */
 export function useDeployPolling(name: string, id: string | null) {
     const args = id ? { name, id } : skipToken;
 

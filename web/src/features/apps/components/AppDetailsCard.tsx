@@ -26,6 +26,13 @@ export function AppDetailsCard({ app }: { app: BultApp }) {
                         <span className={classes.muted}>/</span>
                     )}
                 </Row>
+                <Row label="Health check">
+                    {app.health_path ? (
+                        <Mono>{app.health_path}</Mono>
+                    ) : (
+                        <span className={classes.muted}>TCP</span>
+                    )}
+                </Row>
                 <Row label="Preset">
                     <Mono>{app.preset}</Mono>
                 </Row>

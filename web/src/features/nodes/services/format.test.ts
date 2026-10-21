@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { formatMemory, lastSeenLabel, roleLabel, secondsSince } from './format';
+import { formatMemory, lastSeenLabel, NODE_STATUS, roleLabel, secondsSince } from './format';
 
 const NOW = Date.parse('2026-10-18T12:00:00Z');
 
@@ -28,5 +28,13 @@ describe('roleLabel', () => {
     it('names every role', () => {
         expect(roleLabel('builder')).toBe('Builder');
         expect(roleLabel('both')).toBe('Builder + runner');
+    });
+});
+
+describe('NODE_STATUS', () => {
+    it('shows dead apart from unhealthy', () => {
+        expect(NODE_STATUS.dead.label).toBe('Dead');
+        expect(NODE_STATUS.dead.color).not.toBe(NODE_STATUS.unhealthy.color);
+        expect(NODE_STATUS.ready.color).toBe('green');
     });
 });

@@ -1,6 +1,6 @@
 import { Badge, Table } from '@mantine/core';
 import { Mono } from '@/shared/components';
-import { formatMemory, lastSeenLabel, roleLabel } from '../services/format';
+import { formatMemory, lastSeenLabel, NODE_STATUS, roleLabel } from '../services/format';
 import type { PlatformNode } from '../types';
 import classes from './NodesTable.module.css';
 
@@ -32,8 +32,8 @@ export function NodesTable({ nodes }: { nodes: PlatformNode[] }) {
                             </Table.Td>
                             <Table.Td>{roleLabel(node.role)}</Table.Td>
                             <Table.Td>
-                                <Badge color={node.status === 'ready' ? 'green' : 'red'}>
-                                    {node.status === 'ready' ? 'Ready' : 'Unhealthy'}
+                                <Badge color={NODE_STATUS[node.status].color}>
+                                    {NODE_STATUS[node.status].label}
                                 </Badge>
                             </Table.Td>
                             <Table.Td>{lastSeenLabel(node.last_seen_at)}</Table.Td>
