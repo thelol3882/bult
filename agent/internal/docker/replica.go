@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/netip"
 	"strconv"
 	"time"
 
@@ -41,6 +40,9 @@ type ReplicaSpec struct {
 	CPUMillicores int64
 	MemoryBytes   int64
 	Env           []EnvVar
+	// HealthPath is an HTTP path to probe; empty means a TCP probe. Kept in a
+	// label so it survives an agent restart.
+	HealthPath string
 }
 
 // State is the lifecycle state of a replica.
@@ -62,6 +64,12 @@ type Replica struct {
 	Image         ImageRef
 	StartedAt     time.Time
 	ExitCode      int // meaningful only when State == StateExited
+	// Status is Docker's own state name ("running", "exited", "dead",
+	// "created", ...), for callers that need more than State tells.
+	Status     string
+	OOMKilled  bool
+	FinishedAt time.Time // zero while the container never ran or is running
+	HealthPath string
 }
 
 // containerName returns the container name of a replica: "bult-<replicaID>".
@@ -107,49 +115,15 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 		return Replica{}, err
 	}
 
-	portStr := strconv.Itoa(spec.ContainerPort)
-	targetPort, err := network.ParsePort(portStr)
+	cfg, hostCfg, err := containerConfigs(spec, port)
 	if err != nil {
-		return Replica{}, fmt.Errorf("parse port %s: %w", portStr, err)
-	}
-
-	envList := make([]string, 0, len(spec.Env))
-
-	for _, env := range spec.Env {
-		envList = append(envList, fmt.Sprintf("%s=%s", env.Name, env.Value))
+		return Replica{}, err
 	}
 
 	createRes, err := c.api.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Name: containerName(spec.ReplicaID),
-		Config: &container.Config{
-			Image: spec.Image.String(),
-			Labels: map[string]string{
-				labelManaged:       "true",
-				labelAppID:         spec.AppID,
-				labelReplicaID:     spec.ReplicaID,
-				labelImageDigest:   spec.Image.Digest,
-				labelImageRepo:     spec.Image.Repository,
-				labelContainerPort: portStr,
-			},
-			ExposedPorts: network.PortSet{
-				targetPort: struct{}{},
-			},
-			Env: envList,
-		},
-		HostConfig: &container.HostConfig{
-			Resources: container.Resources{
-				NanoCPUs: spec.CPUMillicores * 1_000_000,
-				Memory:   spec.MemoryBytes,
-			},
-			PortBindings: network.PortMap{
-				targetPort: []network.PortBinding{
-					{
-						HostIP:   netip.IPv4Unspecified(),
-						HostPort: strconv.Itoa(port),
-					},
-				},
-			},
-		},
+		Name:       containerName(spec.ReplicaID),
+		Config:     cfg,
+		HostConfig: hostCfg,
 		NetworkingConfig: &network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
 				netName: {},
@@ -197,6 +171,11 @@ func (c *Client) Run(ctx context.Context, spec ReplicaSpec) (Replica, error) {
 	return replica, nil
 }
 
+// Inspect reads one replica back from Docker; ErrNotFound if it is gone.
+func (c *Client) Inspect(ctx context.Context, replicaID string) (Replica, error) {
+	return c.inspectReplica(ctx, containerName(replicaID))
+}
+
 // inspectReplica reads a container back from Docker and maps it to Replica:
 // IDs and image from labels, state/exit code/start time from State,
 // host port from the port bindings. ListReplicas will reuse it.
@@ -217,6 +196,7 @@ func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replic
 			Repository: labels[labelImageRepo],
 			Digest:     labels[labelImageDigest],
 		},
+		HealthPath: labels[labelHealthPath],
 	}
 
 	containerState := insRes.Container.State
@@ -231,6 +211,16 @@ func (c *Client) inspectReplica(ctx context.Context, containerID string) (Replic
 		}
 
 		replica.ExitCode = containerState.ExitCode
+		replica.Status = string(containerState.Status)
+		replica.OOMKilled = containerState.OOMKilled
+
+		if containerState.FinishedAt != "" {
+			t, err := time.Parse(time.RFC3339, containerState.FinishedAt)
+			if err != nil {
+				return Replica{}, fmt.Errorf("parse finished_at %q: %w", containerState.FinishedAt, err)
+			}
+			replica.FinishedAt = t
+		}
 
 		if containerState.StartedAt != "" {
 			t, err := time.Parse(time.RFC3339, containerState.StartedAt)

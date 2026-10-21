@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 	"github.com/thelol3882/bult/agent/internal/metrics"
 	"github.com/thelol3882/bult/agent/internal/ports"
 	"github.com/thelol3882/bult/agent/internal/server"
+	"github.com/thelol3882/bult/agent/internal/watch"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/reflection"
@@ -222,7 +224,8 @@ func run(cfg config) error {
 }
 
 // startHeartbeat starts the heartbeat loop and returns a channel that is closed
-// when the loop has stopped (at once if heartbeats are disabled).
+// when the loop and the replica watcher have stopped (at once if heartbeats
+// are disabled).
 func startHeartbeat(ctx context.Context, cfg config, hostname string, dc *docker.Client) <-chan struct{} {
 	done := make(chan struct{})
 
@@ -245,14 +248,30 @@ func startHeartbeat(ctx context.Context, cfg config, hostname string, dc *docker
 		Version:  version,
 		Capacity: heartbeat.DetectCapacity(),
 	}
+	var w *watch.Watcher
 	if cfg.role == "runner" || cfg.role == "both" {
 		hb.Sampler = metrics.NewCollector(dc, metrics.DefaultTimeout)
+
+		w = watch.New(dc, watch.Config{})
+		// The first beats should already know the replicas; if Docker is not
+		// answering, Run retries and the beats go without a replica list.
+		if err := w.Sync(ctx); err != nil {
+			slog.Warn("initial replica sync failed", "err", err)
+		}
+		hb.Watcher = w
 	}
 	slog.Info("heartbeat enabled", "control_plane", cfg.controlPlaneURL, "node", name, "advertise", cfg.advertiseAddr)
 
-	go func() {
-		defer close(done)
+	var wg sync.WaitGroup
+	if w != nil {
+		wg.Go(func() { w.Run(ctx) })
+	}
+	wg.Go(func() {
 		heartbeat.Run(ctx, hb, &http.Client{Timeout: heartbeat.DefaultTimeout})
+	})
+	go func() {
+		wg.Wait()
+		close(done)
 	}()
 	return done
 }

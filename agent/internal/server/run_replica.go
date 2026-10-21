@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
+	"strings"
+	"unicode"
 
 	agentv1 "github.com/thelol3882/bult/agent/gen/bult/agent/v1"
 	"github.com/thelol3882/bult/agent/internal/docker"
@@ -83,6 +86,7 @@ func toSpec(req *agentv1.RunReplicaRequest) docker.ReplicaSpec {
 			Value: e.GetValue(),
 		})
 	}
+	envVars, healthPath := extractHealthPath(req.GetReplicaId(), envVars)
 
 	return docker.ReplicaSpec{
 		ReplicaID: req.GetReplicaId(),
@@ -95,7 +99,50 @@ func toSpec(req *agentv1.RunReplicaRequest) docker.ReplicaSpec {
 		CPUMillicores: req.GetLimits().GetCpuMillicores(),
 		MemoryBytes:   req.GetLimits().GetMemoryBytes(),
 		Env:           envVars,
+		HealthPath:    healthPath,
 	}
+}
+
+// healthPathEnv is the reserved variable the control plane uses to hand the
+// replica's health path to the agent (the proto has no field for it). It is
+// removed from the env: the container never sees it.
+const healthPathEnv = "BULT_HEALTH_PATH"
+
+const maxHealthPath = 200
+
+// extractHealthPath removes BULT_HEALTH_PATH from env and returns its value
+// when valid. An invalid value is ignored (TCP probe) with a warning.
+func extractHealthPath(replicaID string, env []docker.EnvVar) ([]docker.EnvVar, string) {
+	rest := make([]docker.EnvVar, 0, len(env))
+	var path string
+	for _, e := range env {
+		if e.Name != healthPathEnv {
+			rest = append(rest, e)
+			continue
+		}
+		switch {
+		case e.Value == "":
+		case validHealthPath(e.Value):
+			path = e.Value
+		default:
+			slog.Warn("ignoring invalid health path, falling back to a TCP probe", "replica", replicaID)
+		}
+	}
+	return rest, path
+}
+
+// validHealthPath: starts with "/", at most 200 bytes, no whitespace or
+// control characters.
+func validHealthPath(p string) bool {
+	if !strings.HasPrefix(p, "/") || len(p) > maxHealthPath {
+		return false
+	}
+	for _, r := range p {
+		if unicode.IsSpace(r) || unicode.IsControl(r) {
+			return false
+		}
+	}
+	return true
 }
 
 // toProtoReplica converts a domain replica into its protobuf message.

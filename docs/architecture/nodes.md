@@ -11,7 +11,7 @@ Every `bultd` with `--control-plane-url` sends `POST /internal/nodes/heartbeat` 
  "version": "v0.4", "capacity": {"cpus": 2, "memory_bytes": 2086961152}}
 ```
 
-A runner also sends `"replicas": [{"replica_id": "<deploy_id>-r0", "cpu_cores": 0.12, "cpu_limit_pct": 24.0, "mem_bytes": 52428800, "mem_limit_bytes": 268435456}]`, one reading per running replica; the control plane stores them (`metrics.md`). The field is optional, so builders and older agents still work, and a failure to store readings never fails the heartbeat.
+A runner also sends `"replicas": [{"replica_id": "<deploy_id>-r0", "state": "running", "healthy": true, "cpu_cores": 0.12, "cpu_limit_pct": 24.0, "mem_bytes": 52428800, "mem_limit_bytes": 268435456}]`: the usage of each running replica (stored, `metrics.md`) and the state of every replica container, exited ones included (`health.md`). The field is optional, so builders and older agents still work, and a failure to store readings or states never fails the heartbeat.
 
 `address` is the gRPC address the control plane should dial (`--advertise-addr`); the control plane upserts the `nodes` row and sets `last_seen_at`. A new node appears by starting its agent with a token; nothing is configured on the control plane except the token. The agent logs a failure on the first miss and then once a minute, and stops with its run context on shutdown. Without `--control-plane-url` or `BULTD_NODE_TOKEN` it logs that heartbeats are off and runs as before.
 
@@ -27,20 +27,20 @@ Why bound to the name and not one shared secret: a leaked or malicious node woul
 
 ## Status
 
-`ready` while `last_seen_at` is within 15 s (`BULT_NODE_TTL_SECONDS`), else `unhealthy`: three missed heartbeats. Status is **derived on read** from `last_seen_at`; nothing stores it, so a crashed control plane cannot leave a stale "ready".
+`ready` while `last_seen_at` is within 15 s (`BULT_NODE_TTL_SECONDS`), `unhealthy` after three missed heartbeats, and `dead` after 60 s (`BULT_NODE_DEAD_SECONDS`). Status is **derived on read** from `last_seen_at`; nothing stores it, so a crashed control plane cannot leave a stale "ready".
 
 Two thresholds, two costs:
 
 | Reaction | When | Why |
 |---|---|---|
 | Take the node's replicas out of the upstream | `unhealthy` (~15 s) | cheap and reversible: the replicas keep running, and come back into the upstream when heartbeats return |
-| Move its replicas to other nodes | not implemented | expensive and needs certainty: if the node is only partitioned, its containers still run and there are duplicates |
+| Move its replicas to other nodes | `dead` (~60 s) | expensive and needs certainty: if the node is only partitioned, its containers still run and there are duplicates; so the 60 s, and a returning node has its stale containers removed on its first heartbeats (`health.md`) |
 
 Errors in both directions: calling a live node dead drops capacity and, with a rescheduler, creates duplicates (split brain); calling a dead node alive sends users to a dead upstream. nginx's `proxy_connect_timeout 3s` and, later, `max_fails` cover the second case between two heartbeats.
 
 ### Monitor
 
-A loop in the lifespan (every 3 s, `BULT_NODE_MONITOR_INTERVAL`) compares statuses with the previous round. When a known node flips `ready` ↔ `unhealthy` it re-applies the routes (`DeployService.reapply_routes`), so the node's replicas leave or rejoin the upstream. A node that appears for the first time changes nothing. If the callback fails, the same change is looked at again next round.
+A loop in the lifespan (every 3 s, `BULT_NODE_MONITOR_INTERVAL`) compares statuses with the previous round (it only sees ready or not ready: a dead node is unhealthy to it; the reconciler in `health.md` reschedules). When a known node flips `ready` ↔ `unhealthy` it re-applies the routes (`DeployService.reapply_routes`), so the node's replicas leave or rejoin the upstream. A node that appears for the first time changes nothing. If the callback fails, the same change is looked at again next round.
 
 After a control plane start the monitor waits one TTL before its first round, because the agents have not reported yet and every row looks stale. The startup check renders routes ignoring node health for the same reason; the monitor's first round then refreshes them if some node really is unhealthy. Without this, every restart of the control plane would briefly route nothing.
 

@@ -16,6 +16,7 @@ const (
 	labelImageRepo     = "bult.image.repository"
 	labelImageDigest   = "bult.image.digest"
 	labelContainerPort = "bult.container_port"
+	labelHealthPath    = "bult.health_path"
 )
 
 // Client runs bult replicas on the local Docker daemon.

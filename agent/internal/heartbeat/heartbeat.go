@@ -10,10 +10,12 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/thelol3882/bult/agent/internal/metrics"
+	"github.com/thelol3882/bult/agent/internal/watch"
 )
 
 const (
@@ -41,6 +43,14 @@ type Sampler interface {
 	Collect(ctx context.Context) []metrics.Replica
 }
 
+// ReplicaWatcher reports the state of every replica on the node, exited ones
+// included. Synced is false until the first full list was read; until then
+// the snapshot must not be taken for the complete picture.
+type ReplicaWatcher interface {
+	Snapshot() []watch.Status
+	Synced() bool
+}
+
 // Config describes the node and where to report it.
 type Config struct {
 	URL      string // control plane base URL, e.g. http://192.168.252.1:8000
@@ -50,8 +60,9 @@ type Config struct {
 	Role     string
 	Version  string
 	Capacity Capacity
-	Interval time.Duration // zero means DefaultInterval
-	Sampler  Sampler       // nil: no replica metrics (builder-only nodes)
+	Interval time.Duration  // zero means DefaultInterval
+	Sampler  Sampler        // nil: no replica metrics (builder-only nodes)
+	Watcher  ReplicaWatcher // nil: no replica states
 }
 
 type payload struct {
@@ -62,7 +73,76 @@ type payload struct {
 	Capacity Capacity `json:"capacity"`
 	// Replicas is omitted when empty so that an older control plane, and a
 	// builder, see the same body as before.
-	Replicas []metrics.Replica `json:"replicas,omitempty"`
+	Replicas []replicaEntry `json:"replicas,omitempty"`
+	// ReportsReplicas tells the control plane that Replicas is the complete
+	// list, so a replica missing from it is gone.
+	ReportsReplicas bool `json:"reports_replicas,omitempty"`
+}
+
+// replicaEntry is one replica in the beat. State fields are set only when a
+// watcher is configured; the usage fields only for a running replica that
+// could be read this beat (absent means no reading, never zero).
+type replicaEntry struct {
+	ReplicaID  string `json:"replica_id"`
+	State      string `json:"state,omitempty"`
+	ExitCode   *int   `json:"exit_code,omitempty"`
+	OOMKilled  *bool  `json:"oom_killed,omitempty"`
+	Healthy    *bool  `json:"healthy,omitempty"`
+	FinishedAt string `json:"finished_at,omitempty"` // RFC3339, UTC
+
+	CPUCores      *float64 `json:"cpu_cores,omitempty"`
+	CPULimitPct   *float64 `json:"cpu_limit_pct,omitempty"`
+	MemBytes      *int64   `json:"mem_bytes,omitempty"`
+	MemLimitBytes *int64   `json:"mem_limit_bytes,omitempty"`
+}
+
+func withUsage(e replicaEntry, m metrics.Replica) replicaEntry {
+	e.CPUCores = &m.CPUCores
+	e.CPULimitPct = &m.CPULimitPct
+	e.MemBytes = &m.MemBytes
+	e.MemLimitBytes = &m.MemLimitBytes
+	return e
+}
+
+// mergeReplicas combines replica states and usage readings by replica id,
+// ordered by id. Without states the usage readings go out as they are. With
+// states, a reading is attached only to a running replica, and a reading for
+// a replica the watcher does not know yet is left for the next beat.
+func mergeReplicas(states []watch.Status, usage []metrics.Replica) []replicaEntry {
+	if states == nil {
+		out := make([]replicaEntry, 0, len(usage))
+		for _, m := range usage {
+			out = append(out, withUsage(replicaEntry{ReplicaID: m.ReplicaID}, m))
+		}
+		return out
+	}
+
+	byID := make(map[string]metrics.Replica, len(usage))
+	for _, m := range usage {
+		byID[m.ReplicaID] = m
+	}
+	out := make([]replicaEntry, 0, len(states))
+	for _, s := range states {
+		e := replicaEntry{
+			ReplicaID: s.ReplicaID,
+			State:     string(s.State),
+			OOMKilled: &s.OOMKilled,
+			Healthy:   &s.Healthy,
+		}
+		if s.State == watch.StateRunning {
+			if m, ok := byID[s.ReplicaID]; ok {
+				e = withUsage(e, m)
+			}
+		} else {
+			e.ExitCode = &s.ExitCode
+			if !s.FinishedAt.IsZero() {
+				e.FinishedAt = s.FinishedAt.UTC().Format(time.RFC3339)
+			}
+		}
+		out = append(out, e)
+	}
+	slices.SortFunc(out, func(a, b replicaEntry) int { return strings.Compare(a.ReplicaID, b.ReplicaID) })
+	return out
 }
 
 // Run sends a beat immediately and then one per interval until ctx is
@@ -118,8 +198,20 @@ func send(ctx context.Context, client *http.Client, url string, cfg Config) erro
 		Version:  cfg.Version,
 		Capacity: cfg.Capacity,
 	}
+	var usage []metrics.Replica
 	if cfg.Sampler != nil {
-		p.Replicas = cfg.Sampler.Collect(ctx)
+		usage = cfg.Sampler.Collect(ctx)
+	}
+	if cfg.Watcher != nil && cfg.Watcher.Synced() {
+		// Snapshot after the (slow) usage collection: it is the fresher of the two.
+		states := cfg.Watcher.Snapshot()
+		if states == nil {
+			states = []watch.Status{}
+		}
+		p.Replicas = mergeReplicas(states, usage)
+		p.ReportsReplicas = true
+	} else if len(usage) > 0 {
+		p.Replicas = mergeReplicas(nil, usage)
 	}
 	body, err := json.Marshal(p)
 	if err != nil {
