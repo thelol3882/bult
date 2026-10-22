@@ -1,0 +1,8 @@
+#cloud-config
+write_files:
+  - path: /etc/docker/daemon.json
+    permissions: "0644"
+    content: |
+      {
+        "insecure-registries": ["192.168.252.1:5050"]
+      }
