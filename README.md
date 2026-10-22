@@ -35,8 +35,11 @@ macOS or Linux with Docker, Multipass, Python 3.10+ and `uv`. Go is optional, be
 Create the virtual machines once. The commands below assume the Multipass bridge address `192.168.252.1`, which is used for the registry and the API.
 
 ```sh
-for vm in bult-builder bult-node-1 bult-node-2; do
+multipass launch 24.04 --name bult-builder --cpus 2 --memory 3G --disk 20G --cloud-init deploy/multipass/cloud-init.yaml
+for vm in bult-node-1 bult-node-2; do
   multipass launch 24.04 --name $vm --cpus 2 --memory 2G --disk 15G --cloud-init deploy/multipass/cloud-init.yaml
+done
+for vm in bult-builder bult-node-1 bult-node-2; do
   multipass exec $vm -- sh -c "curl -fsSL https://get.docker.com | sudo sh"
 done
 ```

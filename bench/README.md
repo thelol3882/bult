@@ -48,7 +48,7 @@ The algorithm is switched by `python3 scripts/dev.py lb <round_robin|least_conn|
 writes `.bult/lb.env`, recreates the `api` container (BULT_LB_ALGORITHM is read at start; the API
 re-renders the routes on start) and waits until the ingress runs a generation with the new
 directive (about 5-15 s). It leaves the stack on the last algorithm; run
-`dev.py lb round_robin` afterwards to go back to the default.
+`dev.py lb least_conn` afterwards to go back to the default.
 
 Plots (matplotlib is fetched on the fly):
 
